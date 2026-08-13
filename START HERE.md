@@ -32,6 +32,9 @@ opens a moment later.
 - *Linux — it says the graphical toolkit is missing*: tkinter is a separate package on
   most distributions. The launcher prints the exact command for yours, usually
   `sudo apt install python3-tk python3-venv` or `sudo dnf install python3-tkinter`.
+- *Either — it says your Python is too old*: it needs 3.10 or newer, and Macs and some
+  Linux distributions still ship an older one. Install a current version and run the
+  launcher again — it will find the new one on its own.
 - *Either — it says Python isn't installed*: get it from
   [python.org/downloads](https://www.python.org/downloads/). **On Windows, tick "Add
   python.exe to PATH" on the first screen of the installer**, or the launcher won't

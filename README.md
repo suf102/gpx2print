@@ -38,7 +38,8 @@ python3 -m gpx2print.gui
 
 ## Install
 
-Needs **Python 3.10 or newer**.
+Needs **Python 3.10 or newer**. The launchers check this: macOS ships Python 3.9, and
+Debian 11 and RHEL 8 still do, so "a Python exists" is not enough.
 
 ```bash
 pip install .

@@ -11,6 +11,7 @@ cd "$(dirname "$0")" || exit 1
 
 VENV=".venv"
 PKGS="gpxpy trimesh shapely matplotlib numpy scipy pillow requests manifold3d mapbox_earcut"
+NEEDS="3.10"
 
 echo "Starting the map maker…"
 echo
@@ -39,20 +40,36 @@ venv_hint() {
     esac
 }
 
-# ---- find a Python we can use ------------------------------------------------
+# ---- find a Python we can actually use ---------------------------------------
+# Existing is not enough: Debian 11 and RHEL 8 still ship Python 3.9, which is too
+# old for this program. Each candidate has to run AND be new enough.
 PY=""
-for candidate in "$VENV/bin/python" python3 python; do
-    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c "import sys" >/dev/null 2>&1; then
+NEWEST=""
+for candidate in "$VENV/bin/python" python3 python3.13 python3.12 python3.11 \
+                 python3.10 python; do
+    command -v "$candidate" >/dev/null 2>&1 || continue
+    v=$("$candidate" -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>/dev/null) || continue
+    [ -z "$v" ] && continue
+    [ -z "$NEWEST" ] && NEWEST="$v"
+    if "$candidate" -c 'import sys;raise SystemExit(0 if sys.version_info>=(3,10) else 1)' \
+        >/dev/null 2>&1; then
         PY="$candidate"
         break
     fi
 done
 
 if [ -z "$PY" ]; then
-    echo "Python 3 isn't installed."
-    echo
-    echo "Install it with your package manager, for example:"
-    echo "    sudo apt install python3 python3-tk python3-venv"
+    if [ -n "$NEWEST" ]; then
+        echo "The Python here is version $NEWEST, and this needs $NEEDS or newer."
+        echo
+        echo "Install a newer one with your package manager, for example:"
+        echo "    sudo apt install python3.12 python3.12-tk python3.12-venv"
+    else
+        echo "Python 3 isn't installed."
+        echo
+        echo "Install it with your package manager, for example:"
+        echo "    sudo apt install python3 python3-tk python3-venv"
+    fi
     echo
     read -r -p "Press return to close. "
     exit 1

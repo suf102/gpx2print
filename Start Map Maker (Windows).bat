@@ -10,9 +10,11 @@ REM ---- find a Python we can use -------------------------------------------
 REM Each candidate is tested by actually running it, so the Microsoft Store
 REM placeholder python.exe (which does nothing and opens the Store) is skipped.
 set "PY="
+set "FOUNDOLD="
 call :findpy py -3
 if not defined PY call :findpy python
 if not defined PY call :findpy python3
+if not defined PY if defined FOUNDOLD goto oldpython
 if not defined PY goto nopython
 
 REM ---- make sure the libraries are there -----------------------------------
@@ -40,9 +42,23 @@ if errorlevel 1 goto failed
 exit /b 0
 
 :findpy
-%* -c "import sys" >nul 2>&1
+REM Must run AND be new enough: an old Python would install everything and then
+REM fail with a message that means nothing to anyone.
+%* -c "import sys; raise SystemExit(0 if sys.version_info>=(3,10) else 1)" >nul 2>&1
 if not errorlevel 1 set "PY=%*"
+if errorlevel 1 %* -c "import sys" >nul 2>&1 && set "FOUNDOLD=1"
 goto :eof
+
+:oldpython
+echo The Python on this PC is too old. This needs Python 3.10 or newer.
+echo.
+echo Get a current version from https://www.python.org/downloads/
+echo.
+echo IMPORTANT: on the first screen of the installer, tick
+echo            "Add python.exe to PATH" before pressing Install.
+echo.
+pause
+exit /b 1
 
 :nopython
 echo Python is not installed on this PC.
