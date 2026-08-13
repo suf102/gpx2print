@@ -1,0 +1,182 @@
+# Making a 3D printed map of your walk
+
+You don't need to know anything technical. Two files come out at the end — one for the
+map, one for the coloured route that clips into it — and you print them separately in
+two colours.
+
+## 1. Open it
+
+Double-click the one for your computer:
+
+| Your computer | Double-click this |
+| --- | --- |
+| Mac | **Start Map Maker (Mac).command** |
+| Windows | **Start Map Maker (Windows).bat** |
+
+A black text window appears first — that's normal, ignore it. The map maker window
+opens a moment later.
+
+> **The very first time**, it spends a minute or two installing what it needs. That only
+> happens once.
+
+**If it won't open:**
+
+- *Mac — "cannot be opened because it is from an unidentified developer"*: right-click
+  the file, choose *Open*, then click *Open* in the box that appears. Only needed once.
+- *Windows — a blue "Windows protected your PC" box*: click *More info*, then
+  *Run anyway*. Only needed once.
+- *Either — it says Python isn't installed*: get it from
+  [python.org/downloads](https://www.python.org/downloads/). **On Windows, tick "Add
+  python.exe to PATH" on the first screen of the installer**, or the launcher won't
+  find it.
+
+## 2. Fill it in
+
+**1. Your walk**
+- *Choose GPX file(s)* — the track from your watch, phone or Strava. You can pick
+  **several at once**, or press it again to add more. See below for what happens then.
+- *Save into* — where the finished files should go. The Desktop is fine.
+- *Name the files* — fills itself in from your first GPX file; change it if you like.
+
+### Walks split across several files
+
+A multi-day walk usually comes as one file per day. Choose them all. Any day that ends
+where the next one begins is **joined into a single continuous route** — you don't have
+to put them in order, and it doesn't matter if one was recorded walking the other way.
+
+Anything that *doesn't* join up — a separate afternoon walk somewhere else, say —
+becomes its **own trail piece**, printed separately in its own colour, on the same map.
+So you might end up with:
+
+```
+trip_map.3mf      the landscape
+trip_trail1.3mf   the main route
+trip_trail2.3mf   the side walk
+```
+
+Two routes that **cross each other**, or run close enough to touch on the finished
+print, are also combined into one piece — they'd otherwise occupy the same space and
+neither would fit. You'll see a note when this happens.
+
+The progress box tells you how many pieces you're getting and which files went into
+each. If two days that should have joined didn't, raise *Join files closer than* under
+*Advanced settings*.
+
+**2. How it looks**
+- *Map size* — how big the finished thing is, in millimetres, along its longest edge.
+  150 mm is about the width of a postcard. Check it fits your printer.
+- *Trail line width* — how thick the coloured route looks. 3 mm is a good start.
+- *Hill height boost* — real hills are surprisingly flat at this scale, so this
+  stretches them upwards. 1 is true to life and looks dull; 2–3 looks like a mountain.
+- *Caption* — text along the bottom edge. A name and a date works nicely.
+- *Lettering* — **Engraved** cuts the text into the surface, **Raised** makes it stand
+  out. Engraved usually prints more neatly, so it's the default. This also changes the
+  distance scale and north arrow.
+
+**3. How the two parts fit**
+- *Fit* — how tightly the route clips into the map. Leave it on **Normal** for now;
+  that suits most printers. There are ten settings from *Glued* to *Very sloppy*, so
+  if the first attempt is wrong just move one step along the list and reprint the
+  trail piece.
+
+  Printers lay their first few layers slightly wider than they should, which makes the
+  slot tighter than the number suggests — so if in doubt, go looser rather than tighter.
+- *Which way the route goes in* — **From above** drops it into a groove, which is the
+  simple choice. **From underneath** cuts the slot right through so the route finishes
+  flush with the back of the map.
+
+  Careful with that second one if your walk is a **loop**: going right through cuts the
+  middle of the loop free, so the map comes in two pieces. That's unavoidable — nothing
+  is holding the middle on any more. Print both; the route slots in and locks them
+  together. You'll get `yourname_map1.3mf` and `yourname_map2.3mf` instead of one map.
+- *Trail piece shape* — leave on **Flat bottom** unless your route climbs a mountain
+  and the trail piece comes out awkwardly tall.
+
+Everything else is under *Advanced settings* and you can ignore it — though two things
+in there are worth knowing about:
+
+- *Distance scale* — a small ruler on the bottom strip showing how far a centimetre of
+  map is on the ground ("2 km", say). On by default.
+- *North arrow* — an arrow on the bottom strip showing which way is north. On by
+  default.
+- *Route only* — leaves out the landscape entirely. You get the route standing on a
+  plain base as an elevation profile: the hills around it are gone, but the route still
+  rises and falls with the real ground. The base keeps the caption, scale and arrow.
+  This one comes out as **a single file printed in one colour** — the route is already
+  joined to its base, so there is nothing to clip together.
+
+Untick either if you'd rather have a cleaner strip with just your caption.
+
+## 3. Look before you leap
+
+Press **Just show me a preview**. You get a picture of the map, the route, the caption
+and the hill profile, plus the exact size of both pieces — without making anything.
+
+Change things and press it again until it looks right. It takes a few seconds.
+
+## 4. Make the files
+
+Press **Create print files**. When it finishes you'll have:
+
+```
+yourname_map.3mf     the landscape
+yourname_trail.3mf   the route that clips into it
+yourname.png         the preview picture, to keep
+```
+
+If your walk came out as more than one piece you'll get `yourname_trail1.3mf`,
+`yourname_trail2.3mf` and so on — one per piece, each shown in its own colour on the
+preview.
+
+Press **Open the folder** to find them.
+
+## 5. Print
+
+Open **yourname_map.3mf** in your slicer, load your landscape colour, and print it.
+
+Then open **yourname_trail.3mf**, load your route colour, and print that.
+
+Neither one needs supports. Both already sit flat on the bed, so you shouldn't need to
+move or rotate anything.
+
+When they're both done, press the route into the groove in the map. It should need a
+firm push.
+
+## If something goes wrong
+
+**"Choose a GPX file first"** — you haven't picked your walk yet.
+
+**It's slow the first time you use a new area** — it's downloading the landscape data.
+The next map of the same area is quick.
+
+**The trail piece is really tall and thin** — your route climbs a lot. Turn the *hill
+height boost* down to about 1, or switch *Trail piece shape* to *Follows the ground*.
+There's a note in the progress box when this happens.
+
+**The route won't push into the map** — reprint just the trail piece with the fit set
+one step looser down the list. **It rattles about** — one step tighter. You only need
+to reprint the small piece, not the map, and the settings file next to your models
+tells you which setting you used last time.
+
+**No internet** — it still works. It uses the height readings recorded in your GPX file
+instead, so the landscape around the path is a rough guess rather than real terrain.
+
+## Where the landscape comes from
+
+The hills are real. They're downloaded from **Mapzen Terrain Tiles**, a free open dataset
+(a Linux Foundation project, hosted on AWS Open Data) built from government survey data —
+US Geological Survey, NASA's shuttle radar, the EU's Copernicus programme, and national
+mapping agencies.
+
+Using it comes with one condition: **you have to credit it**. That's done for you — a
+small line of text is engraved into the **underside of the map**, so the credit stays
+with the object even if the files are long gone. Turn the print over and you'll see it
+the right way round. It's also written inside both `.3mf` files and printed along the
+bottom of the preview picture.
+
+You don't need to do anything about this. Just don't sand it off.
+
+---
+
+*If you'd rather use the terminal, see `README.md` — everything here is also available
+as a command line tool with more options.*

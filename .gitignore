@@ -1,0 +1,35 @@
+# --- personal data: real GPS traces and anything derived from them ----------
+# These are recordings of where you actually were and when. Keep them out of
+# the repository. Once a file is committed it stays in the history even if you
+# delete it later, so the safe move is never to add it in the first place.
+/ev6/
+/kili/
+/output/
+
+# Any GPX dropped in the project root, so a real track can't be added by accident.
+/*.gpx
+
+# Generated models and previews anywhere in the tree.
+*.3mf
+*.stl
+*.png
+!docs/*.png
+
+# --- local tooling ----------------------------------------------------------
+.claude/
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.idea/
+.vscode/
+
+# --- keep the synthetic sample tracks --------------------------------------
+# These were generated for testing and contain no personal data.
+!examples/**/*.gpx
+
+# --- packaging ---------------------------------------------------------------
+build/
+dist/
+*.egg-info/

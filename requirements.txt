@@ -1,0 +1,15 @@
+gpxpy>=1.6
+numpy>=1.24
+scipy>=1.10
+shapely>=2.0
+matplotlib>=3.7
+requests>=2.28
+pillow>=9.0
+trimesh>=4.0
+
+# Needed at runtime by trimesh for the two operations this tool leans on:
+# manifold3d powers the boolean cuts, mapbox_earcut triangulates the polygons
+# that become extruded solids. Neither is imported here directly, and without
+# them trimesh fails only at the point of use.
+manifold3d>=2.3
+mapbox_earcut>=1.0
