@@ -152,7 +152,9 @@ def _connect(poly, width: float, clip):
     bridges: list[float] = []
     geoms = list(getattr(poly, "geoms", [poly]))
 
-    while True:
+    # Every pass welds at least one pair, so this many is already generous. The
+    # bound exists so a shape nobody anticipated cannot hang the program.
+    for _ in range(len(geoms) + 8):
         merged = unary_union(geoms)
         geoms = list(getattr(merged, "geoms", [merged]))
         if len(geoms) <= 1:
@@ -165,15 +167,21 @@ def _connect(poly, width: float, clip):
                 if best is None or d < best[0]:
                     best = (d, i, j)
         d, i, j = best
-        if d <= 0:  # already touching; the next union will fold them together
-            continue
 
         a, b = nearest_points(geoms[i], geoms[j])
-        bar = LineString([a, b]).buffer(
-            width / 2.0, cap_style=1, join_style=1, resolution=8
-        )
-        geoms.append(bar.intersection(clip))
-        bridges.append(d)
+        if d <= 0:
+            # Touching at a single point. A union will not weld these — shapely
+            # keeps them as separate polygons — so waiting for the next pass to
+            # fix it loops forever. Drop a small disc over the contact instead.
+            patch = a.buffer(max(width / 2.0, 1e-3), resolution=8)
+        else:
+            patch = LineString([a, b]).buffer(
+                width / 2.0, cap_style=1, join_style=1, resolution=8
+            )
+            bridges.append(d)
+        geoms.append(patch.intersection(clip))
+
+    return unary_union(geoms), bridges
 
 
 def _ribbon(path, width: float, clip):
