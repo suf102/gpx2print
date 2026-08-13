@@ -105,7 +105,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help=f"which side the caption strip sits on "
                         f"(default: {d.caption_position})")
     g.add_argument("--square", action="store_true",
-                   help="force a square footprint")
+                   help="force a square footprint. Superseded by --shape square, "
+                        "and kept only so older commands and settings files still "
+                        "work")
     g.add_argument("--z-scale", type=float, default=d.z_scale,
                    help=f"vertical exaggeration (default: {d.z_scale:g})")
     g.add_argument("--max-relief", type=float, default=None, metavar="MM",

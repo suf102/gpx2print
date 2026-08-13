@@ -387,9 +387,6 @@ class App(tk.Tk):
                   foreground=HINT, font=("", 10), wraplength=390,
                   justify="left").pack(anchor="w", pady=(0, 6))
 
-        self.square_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(g, text="Force a square map", variable=self.square_var).pack(
-            anchor="w")
         self.stl_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(g, text="Also save STL files", variable=self.stl_var).pack(
             anchor="w")
@@ -541,7 +538,6 @@ class App(tk.Tk):
             out_path=str(Path(self.out_var.get()) / f"{self._stem()}.3mf"),
             size_mm=self.size.get(),
             margin=self.margin.get(),
-            square=bool(self.square_var.get()),
             z_scale=self.zscale.get(),
             base_mm=self.base.get(),
             grid=int(self.detail.get()),
