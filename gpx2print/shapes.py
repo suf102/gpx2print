@@ -50,15 +50,18 @@ def _unit(shape: str) -> Polygon:
     return Polygon(pts)
 
 
-def _containment_scale(unit: Polygon, w: float, h: float) -> float:
-    """Smallest radius at which `unit` contains a w x h rectangle centred on it.
+def _containment_scale(unit: Polygon, w: float, h: float, cy: float = 0.0) -> float:
+    """Smallest radius at which `unit` contains a w x h rectangle centred at (0, cy).
 
     For a convex polygon written as a set of half-planes n·x <= d, scaling by s
     gives n·x <= s·d, so a corner p needs s >= (n·p)/d. Taking the largest such
     value over every edge and corner gives the exact answer in one pass.
     """
     ring = list(unit.exterior.coords)[:-1]
-    corners = [(-w / 2, -h / 2), (w / 2, -h / 2), (w / 2, h / 2), (-w / 2, h / 2)]
+    corners = [
+        (-w / 2, cy - h / 2), (w / 2, cy - h / 2),
+        (w / 2, cy + h / 2), (-w / 2, cy + h / 2),
+    ]
 
     worst = 0.0
     for i, (x1, y1) in enumerate(ring):
@@ -77,6 +80,26 @@ def _containment_scale(unit: Polygon, w: float, h: float) -> float:
     return worst
 
 
+def _best_placement(unit: Polygon, w: float, h: float) -> tuple[float, float]:
+    """Where to sit the rectangle in the shape, and how big the shape must be.
+
+    Centring it in the bounding box is the obvious choice and the wrong one. A
+    triangle standing on its base is widest at the bottom, so a rectangle held
+    halfway up sits in the narrow half: the shape has to be far larger than
+    necessary, and the route ends up looking as though it has slid upwards.
+    Sliding the rectangle down into the wide part fixes both at once.
+    """
+    # The rectangle is centred on the shape's centroid, which for a regular
+    # polygon drawn about the origin is the origin itself. That is the shape's
+    # visual centre: a triangle's centroid sits a third of the way up, not half,
+    # so the route lands where the eye expects rather than in the narrow tip.
+    #
+    # Chasing the smallest possible shape instead would drive the rectangle right
+    # down into the widest part, which shrinks the plate but leaves the route
+    # hugging the base with a large empty area above it.
+    return _containment_scale(unit, w, h, 0.0), 0.0
+
+
 def scale_ratio(shape: str, w: float, h: float) -> float:
     """How much bigger the shape's bounding box is than the terrain rectangle."""
     if shape == "rectangle":
@@ -86,7 +109,7 @@ def scale_ratio(shape: str, w: float, h: float) -> float:
     unit = _unit(shape)
     from shapely import affinity
 
-    s = _containment_scale(unit, w + 2 * MARGIN_MM, h + 2 * MARGIN_MM)
+    s, _ = _best_placement(unit, w + 2 * MARGIN_MM, h + 2 * MARGIN_MM)
     grown = affinity.scale(unit, xfact=s, yfact=s, origin=(0, 0))
     minx, miny, maxx, maxy = grown.bounds
     return max(maxx - minx, maxy - miny) / max(w, h)
@@ -106,9 +129,11 @@ def outline(shape: str, w: float, h: float) -> Polygon:
     from shapely import affinity
 
     unit = _unit(shape)
-    s = _containment_scale(unit, w + 2 * MARGIN_MM, h + 2 * MARGIN_MM)
+    s, cy = _best_placement(unit, w + 2 * MARGIN_MM, h + 2 * MARGIN_MM)
     poly = affinity.scale(unit, xfact=s, yfact=s, origin=(0, 0))
-    return affinity.translate(poly, w / 2.0, h / 2.0)
+    # The rectangle sits at (0, cy) relative to the shape's centre, so the shape's
+    # centre goes that far the other way from the rectangle's.
+    return affinity.translate(poly, w / 2.0, h / 2.0 - cy)
 
 
 def fill(shape: str, w: float, h: float) -> Polygon:

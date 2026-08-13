@@ -128,32 +128,37 @@ def drop_duplicates(track: Track, min_step_m: float = 1.0) -> Track:
     )
 
 
-def expand_frame(
-    frame: Frame, w_mm: float, h_mm: float, size_mm: float | None
+def frame_for_box(
+    frame: Frame, x0: float, y0: float, x1: float, y1: float,
+    size_mm: float | None,
 ) -> Frame:
-    """Widen the window to w_mm x h_mm of the current scale, then rescale.
+    """A frame covering the given rectangle of this frame's millimetre plane.
 
-    A shape that is not a rectangle needs terrain out to the corners of its own
-    bounding box, not just the track's rectangle, or the plate would be cut off
-    where the grid runs out.
+    The shape is not always centred on the track — a triangle sits lower so the
+    route lands in its wide half — so the new window has to be placed exactly,
+    not merely widened about the middle.
     """
-    w_m = w_mm / frame.mm_per_m
-    h_m = h_mm / frame.mm_per_m
-    # With size_mm given, rescale so the finished plate measures that across. With
-    # it left out the scale is fixed, so the plate simply comes out bigger.
+    per_lon = 1.0 / (frame.m_per_deg_lon * frame.mm_per_m)
+    per_lat = 1.0 / (frame.m_per_deg_lat * frame.mm_per_m)
+    lon_min = frame.lon_min + x0 * per_lon
+    lon_max = frame.lon_min + x1 * per_lon
+    lat_min = frame.lat_min + y0 * per_lat
+    lat_max = frame.lat_min + y1 * per_lat
+
+    w_m = (x1 - x0) / frame.mm_per_m
+    h_m = (y1 - y0) / frame.mm_per_m
     mm_per_m = frame.mm_per_m if size_mm is None else size_mm / max(w_m, h_m)
-    half_lon = (w_m / frame.m_per_deg_lon) / 2
-    half_lat = (h_m / frame.m_per_deg_lat) / 2
+
     return Frame(
-        lat0=frame.lat0,
-        lon0=frame.lon0,
+        lat0=(lat_min + lat_max) / 2,
+        lon0=(lon_min + lon_max) / 2,
         m_per_deg_lon=frame.m_per_deg_lon,
         m_per_deg_lat=frame.m_per_deg_lat,
         mm_per_m=mm_per_m,
-        lon_min=frame.lon0 - half_lon,
-        lon_max=frame.lon0 + half_lon,
-        lat_min=frame.lat0 - half_lat,
-        lat_max=frame.lat0 + half_lat,
+        lon_min=lon_min,
+        lon_max=lon_max,
+        lat_min=lat_min,
+        lat_max=lat_max,
         width_mm=w_m * mm_per_m,
         height_mm=h_m * mm_per_m,
     )

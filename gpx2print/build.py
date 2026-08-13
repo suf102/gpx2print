@@ -269,7 +269,7 @@ def build(cfg) -> Build:
         # An explicit scale must survive the shape growing, so the plate gets
         # bigger rather than the map being squeezed to fit.
         target = None if cfg.scale_denominator else cfg.size_mm
-        frame = gpx_io.expand_frame(frame, gx1 - gx0, gy1 - gy0, target)
+        frame = gpx_io.frame_for_box(frame, gx0, gy0, gx1, gy1, target)
         log(f"  {cfg.shape} plate, {frame.width_mm:.0f} x {frame.height_mm:.0f} mm")
     ny, nx = _grid_shape(frame, cfg.grid)
     log(
