@@ -87,6 +87,13 @@ The progress box tells you how many pieces you're getting and which files went i
 each. If two days that should have joined didn't, raise *Join files closer than* under
 *Advanced settings*.
 
+### No walk — just a place
+
+Leave the files alone and type a **coordinate** instead, like `56.7969,-5.0037`, with
+how many kilometres of ground to cover. You get the landscape around that spot with no
+route on it, as a single piece in one colour. Handy for a hill, a town, or somewhere you
+have not walked yet.
+
 **2. How it looks**
 - *Map size* — how big the finished thing is, in millimetres, along its longest edge.
   150 mm is about the width of a postcard. Check it fits your printer.

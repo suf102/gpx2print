@@ -38,9 +38,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     d = Config()
 
-    p.add_argument("gpx", nargs="+", metavar="GPX",
+    p.add_argument("gpx", nargs="*", metavar="GPX",
                    help="one or more .gpx files. Pieces whose ends meet "
-                        "are joined; the rest become separate trail parts")
+                        "are joined; the rest become separate trail parts. "
+                        "Leave out entirely and use --at for a map with no route")
+    p.add_argument("--at", default=None, metavar="LAT,LON",
+                   help="build a map around a coordinate instead of a route, "
+                        "e.g. --at 56.7969,-5.0037. There is no trail, so it "
+                        "comes out as a single piece")
+    p.add_argument("--across", type=float, default=Config().across_km,
+                   metavar="KM",
+                   help=f"how much ground a map built with --at covers, edge to "
+                        f"edge (default: {Config().across_km:g})")
     p.add_argument(
         "-o",
         "--out",
@@ -210,13 +219,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def args_to_config(a) -> Config:
-    out = a.out or str(Path(a.gpx[0]).with_suffix(".3mf"))
+    if a.gpx:
+        out = a.out or str(Path(a.gpx[0]).with_suffix(".3mf"))
+    else:
+        out = a.out or "map.3mf"
     preview = a.preview
     if preview == "auto":
         preview = str(Path(out).with_suffix(".png"))
 
     return Config(
         gpx_paths=list(a.gpx),
+        centre=a.at,
+        across_km=a.across,
         out_path=out,
         preview_path=preview,
         join_distance_m=a.join_distance,
@@ -267,7 +281,7 @@ def main(argv=None) -> int:
     cfg = args_to_config(a)
 
     cfg.gpx_paths = [str(Path(p).expanduser()) for p in cfg.gpx_paths]
-    cfg.gpx_path = cfg.gpx_paths[0]
+    cfg.gpx_path = cfg.gpx_paths[0] if cfg.gpx_paths else ""
     for p in cfg.gpx_paths:
         if not Path(p).is_file():
             print(f"gpx2print: no such file: {p}", file=sys.stderr)
@@ -324,11 +338,18 @@ def main(argv=None) -> int:
 def _report(b, cfg, secs):
     s = b.stats
     print()
-    print(f"  {'route':<20}{s['track_name'] or '(unnamed)'}")
-    print(f"  {'length':<20}{s['length_km']:.2f} km, {s['ascent_m']:.0f} m ascent")
+    if s.get("map_only"):
+        print(f"  {'centred on':<20}{s['track_name']}")
+        print(f"  {'ground covered':<20}{s['across_km']:g} km across")
+    else:
+        print(f"  {'route':<20}{s['track_name'] or '(unnamed)'}")
+    if not s.get("map_only"):
+        print(f"  {'length':<20}{s['length_km']:.2f} km, "
+              f"{s['ascent_m']:.0f} m ascent")
+    print(f"  {'elevation':<20}{s['elev_min_m']:.0f} to {s['elev_max_m']:.0f} m")
     print(f"  {'scale':<20}1:{s['scale_denominator']:,.0f}, "
           f"vertical x{s['z_exaggeration']:.2f}")
-    label = "one object" if s.get("route_only") else "map part"
+    label = "one object" if (s.get("route_only") or s.get("map_only")) else "map part"
     print(f"  {label:<20}"
           f"{s['map_size_mm'][0]:.1f} x {s['map_size_mm'][1]:.1f} "
           f"x {s['map_size_mm'][2]:.1f} mm, {s['map_health']['faces']:,} faces"
@@ -351,15 +372,15 @@ def _report(b, cfg, secs):
                   f"{sec['size_mm'][0]:.1f} x {sec['size_mm'][1]:.1f} x "
                   f"{sec['size_mm'][2]:.1f} mm, {sec['length_km']:.1f} km"
                   f"  [{src}{joins}]")
-    elif not s.get("route_only"):
+    elif not s.get("route_only") and not s.get("map_only"):
         print(f"  {'trail part':<20}{s['trail_size_mm'][0]:.1f} x "
               f"{s['trail_size_mm'][1]:.1f} x {s['trail_size_mm'][2]:.1f} mm, "
               f"{s['trail_health']['faces']:,} faces")
-    if not s.get("route_only"):
+    if not s.get("route_only") and not s.get("map_only"):
         print(f"  {'fit':<20}channel {s['channel_width_mm']:.2f} mm, insert "
           f"{s['insert_width_mm']:.2f} mm, {s['total_clearance_mm']:.2f} mm total "
           f"clearance")
-    if s.get("route_only"):
+    if s.get("route_only") or s.get("map_only"):
         print(f"  {'watertight':<20}{s['map_health']['watertight']}")
     else:
         print(f"  {'watertight':<20}map {s['map_health']['watertight']}, "

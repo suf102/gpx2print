@@ -224,10 +224,18 @@ def build(cfg) -> Build:
     warnings: list[str] = []
 
     # ------------------------------------------------------------ input files
-    pieces, file_names = gpx_io.load_pieces(cfg.gpx_paths)
-    sections = chain.chain(pieces, cfg.join_distance_m)
+    map_only = cfg.map_only
+    if map_only:
+        lat, lon = gpx_io.parse_coordinate(cfg.centre)
+        track = gpx_io.area_track(lat, lon, cfg.across_km)
+        sections, pieces, file_names = [], [], []
+        log(f"  map only, centred on {lat:.5f}, {lon:.5f}, "
+            f"{cfg.across_km:g} km across")
+    else:
+        pieces, file_names = gpx_io.load_pieces(cfg.gpx_paths)
+        sections = chain.chain(pieces, cfg.join_distance_m)
 
-    if len(cfg.gpx_paths) > 1 or len(sections) > 1:
+    if not map_only and (len(cfg.gpx_paths) > 1 or len(sections) > 1):
         log(
             f"  {len(cfg.gpx_paths)} file(s), {len(pieces)} piece(s) -> "
             f"{len(sections)} section(s)"
@@ -245,19 +253,23 @@ def build(cfg) -> Build:
             )
 
     # One Track covering everything, used for framing and terrain.
-    track = _merged_track(sections)
+    if not map_only:
+        track = _merged_track(sections)
 
     if cfg.scale_denominator:
         # 1:N means a metre of ground becomes 1000/N mm on the model. Measure the
         # ground the map has to cover, then ask for exactly that many millimetres.
-        probe = gpx_io.build_frame(track, 100.0, cfg.margin, cfg.square)
+        margin = 0.0 if map_only else cfg.margin
+        probe = gpx_io.build_frame(track, 100.0, margin, cfg.square)
         ground_m = max(probe.width_mm, probe.height_mm) / probe.mm_per_m
         size_mm = ground_m * (1000.0 / cfg.scale_denominator)
-        frame = gpx_io.build_frame(track, size_mm, cfg.margin, cfg.square)
+        frame = gpx_io.build_frame(track, size_mm, margin, cfg.square)
         log(f"  scale 1:{cfg.scale_denominator:,.0f} -> plate "
             f"{frame.width_mm:.0f} x {frame.height_mm:.0f} mm")
     else:
-        frame = gpx_io.build_frame(track, cfg.size_mm, cfg.margin, cfg.square)
+        frame = gpx_io.build_frame(
+            track, cfg.size_mm, 0.0 if map_only else cfg.margin, cfg.square
+        )
 
     # A shape that is not a rectangle has to grow until it swallows the whole
     # track rectangle, or it would crop the corners off the map and take part of
@@ -424,7 +436,7 @@ def build(cfg) -> Build:
             keep_lines.append(ls)
         except ValueError:
             warnings.append(f"section from {s.name} falls outside the map; skipped")
-    if not keep:
+    if not keep and not map_only:
         raise ValueError("no part of the route overlaps the map area")
     sections, lines = keep, keep_lines
 
@@ -471,130 +483,143 @@ def build(cfg) -> Build:
     cut_poly = cut_poly.intersection(plate)
     path = MultiLineString(lines)
 
-    # Terrain height along the path, used to place the channel floor.
-    from scipy.interpolate import RegularGridInterpolator
+    if map_only:
+        # No route, so no channel, no insert and nothing to fit. The map is the
+        # terrain as built, and every later stage sees an empty list of parts.
+        map_mesh = terrain
+        parts, trail_meshes, cut_poly = [], [], None
+        trail_mesh = None
+        z_floor = 0.0
+        insert_h = (0.0, 0.0)
+        trail_z_min = trail_z_max = cfg.base_mm
+        trail_base = cfg.trail_base
+        path = MultiLineString([])
 
-    interp = RegularGridInterpolator(
-        (y_1d, x_1d), Z_mm, bounds_error=False, fill_value=None
-    )
-    px, py = frame.to_mm(track.lat, track.lon)
-    inside = (px >= 0) & (px <= frame.width_mm) & (py >= 0) & (py <= frame.height_mm)
-    samp = np.column_stack([py[inside], px[inside]])
-    trail_z = interp(samp)
-    trail_z_min = float(np.min(trail_z))
-    trail_z_max = float(np.max(trail_z))
+    if not map_only:
+        # Terrain height along the path, used to place the channel floor.
+        from scipy.interpolate import RegularGridInterpolator
 
-    z_top = float(np.max(Z_mm)) + cfg.trail_proud + 10.0
-
-    # ------------------------------------------------- channel and insert
-    trail_base = cfg.trail_base
-    if cfg.route_only and trail_base == "follow":
-        # "follow" gives the insert a curved underside that hugged the terrain.
-        # With the terrain gone there is nothing for it to hug.
-        trail_base = "flat"
-        warnings.append(
-            "route-only mode fuses the route to its base, so --trail-base follow "
-            "was ignored"
+        interp = RegularGridInterpolator(
+            (y_1d, x_1d), Z_mm, bounds_error=False, fill_value=None
         )
+        px, py = frame.to_mm(track.lat, track.lon)
+        inside = (px >= 0) & (px <= frame.width_mm) & (py >= 0) & (py <= frame.height_mm)
+        samp = np.column_stack([py[inside], px[inside]])
+        trail_z = interp(samp)
+        trail_z_min = float(np.min(trail_z))
+        trail_z_max = float(np.max(trail_z))
 
-    if cfg.trail_entry == "bottom" and not cfg.route_only:
-        # A slot cut right through the map, so the route is pushed up from
-        # underneath until its top stands proud. Its bottom finishes flush with
-        # the bottom of the map.
-        if trail_base == "follow":
+        z_top = float(np.max(Z_mm)) + cfg.trail_proud + 10.0
+
+        # ------------------------------------------------- channel and insert
+        trail_base = cfg.trail_base
+        if cfg.route_only and trail_base == "follow":
+            # "follow" gives the insert a curved underside that hugged the terrain.
+            # With the terrain gone there is nothing for it to hug.
             trail_base = "flat"
             warnings.append(
-                "a route fitted from underneath has to reach the bottom of the "
-                "map, so --trail-base follow was ignored"
+                "route-only mode fuses the route to its base, so --trail-base follow "
+                "was ignored"
             )
-        z_floor = 0.0
-        cutter = meshlib.extrude(cut_poly, height=z_top + 2.0, z0=-1.0)
-        insert_blanks = [
-            meshlib.extrude(pt.polygon, height=z_top + 2.0, z0=0.0) for pt in parts
-        ]
-        below = None
-        insert_h = (trail_z_min, trail_z_max + cfg.trail_proud)
-    elif cfg.route_only:
-        # The route is welded to its base and printed as one object, so there is
-        # no channel, no insert and no clearance to get right. Each fin simply
-        # runs from the bottom of the plate up to the terrain surface, and the
-        # union with the plate makes them a single solid.
-        raised = meshlib.heightfield_solid(X, Y, Z_mm + cfg.trail_proud, -1.0)
-        fins = []
-        for i, pt in enumerate(parts, 1):
-            log(f"  building route {i} of {len(parts)}")
-            column = meshlib.extrude(pt.polygon, height=z_top, z0=0.0)
-            fin = meshlib.boolean("intersection", [raised, column])
-            fin, dropped = meshlib.drop_small_components(fin, min_volume=2.0)
-            if dropped:
+
+        if cfg.trail_entry == "bottom" and not cfg.route_only:
+            # A slot cut right through the map, so the route is pushed up from
+            # underneath until its top stands proud. Its bottom finishes flush with
+            # the bottom of the map.
+            if trail_base == "follow":
+                trail_base = "flat"
                 warnings.append(
-                    f"discarded {dropped} tiny detached fragment(s) from route {i}"
+                    "a route fitted from underneath has to reach the bottom of the "
+                    "map, so --trail-base follow was ignored"
                 )
-            pt.mesh = fin
-            fins.append(fin)
+            z_floor = 0.0
+            cutter = meshlib.extrude(cut_poly, height=z_top + 2.0, z0=-1.0)
+            insert_blanks = [
+                meshlib.extrude(pt.polygon, height=z_top + 2.0, z0=0.0) for pt in parts
+            ]
+            below = None
+            insert_h = (trail_z_min, trail_z_max + cfg.trail_proud)
+        elif cfg.route_only:
+            # The route is welded to its base and printed as one object, so there is
+            # no channel, no insert and no clearance to get right. Each fin simply
+            # runs from the bottom of the plate up to the terrain surface, and the
+            # union with the plate makes them a single solid.
+            raised = meshlib.heightfield_solid(X, Y, Z_mm + cfg.trail_proud, -1.0)
+            fins = []
+            for i, pt in enumerate(parts, 1):
+                log(f"  building route {i} of {len(parts)}")
+                column = meshlib.extrude(pt.polygon, height=z_top, z0=0.0)
+                fin = meshlib.boolean("intersection", [raised, column])
+                fin, dropped = meshlib.drop_small_components(fin, min_volume=2.0)
+                if dropped:
+                    warnings.append(
+                        f"discarded {dropped} tiny detached fragment(s) from route {i}"
+                    )
+                pt.mesh = fin
+                fins.append(fin)
 
-        log(f"  fusing {len(fins)} route(s) onto the base")
-        map_mesh = meshlib.boolean("union", [terrain, *fins])
-        trail_meshes = fins
-        trail_mesh = fins[0]
-        z_floor = 0.0
-        insert_h = (
-            trail_z_min - cfg.base_mm + cfg.trail_proud,
-            trail_z_max - cfg.base_mm + cfg.trail_proud,
-        )
-    elif trail_base == "flat":
-        z_floor = trail_z_min - cfg.trail_thickness
-        if z_floor < MIN_FLOOR_MM:
-            z_floor = MIN_FLOOR_MM
-            warnings.append(
-                f"channel floor raised to {MIN_FLOOR_MM} mm to keep material under "
-                f"the slot; the insert is {trail_z_min - z_floor:.1f} mm thick at its "
-                f"thinnest instead of {cfg.trail_thickness:.1f} mm. Increase --base "
-                f"or reduce --trail-thickness to restore it."
+            log(f"  fusing {len(fins)} route(s) onto the base")
+            map_mesh = meshlib.boolean("union", [terrain, *fins])
+            trail_meshes = fins
+            trail_mesh = fins[0]
+            z_floor = 0.0
+            insert_h = (
+                trail_z_min - cfg.base_mm + cfg.trail_proud,
+                trail_z_max - cfg.base_mm + cfg.trail_proud,
             )
-        cutter = meshlib.extrude(cut_poly, height=z_top - z_floor, z0=z_floor)
-        insert_blanks = [
-            meshlib.extrude(pt.polygon, height=z_top - z_floor, z0=z_floor)
-            for pt in parts
-        ]
-        below = None
-        insert_h = (trail_z_min - z_floor, trail_z_max - z_floor + cfg.trail_proud)
-    else:
-        below = meshlib.heightfield_solid(X, Y, Z_mm - cfg.trail_thickness, -5.0)
-        tall_cut = meshlib.extrude(cut_poly, height=z_top + 10.0, z0=-6.0)
-        cutter = meshlib.boolean("difference", [tall_cut, below])
-        insert_blanks = [
-            meshlib.boolean(
-                "difference",
-                [meshlib.extrude(pt.polygon, height=z_top + 10.0, z0=-6.0), below],
-            )
-            for pt in parts
-        ]
-        z_floor = float(trail_z_min - cfg.trail_thickness)
-        insert_h = (
-            cfg.trail_thickness + cfg.trail_proud,
-            cfg.trail_thickness + cfg.trail_proud,
-        )
-
-    if not cfg.route_only:
-        log(f"  cutting {len(parts)} trail channel(s)")
-        map_mesh = meshlib.boolean("difference", [terrain, cutter])
-
-        raised = meshlib.heightfield_solid(X, Y, Z_mm + cfg.trail_proud, -1.0)
-        trail_meshes = []
-        for i, blank in enumerate(insert_blanks, 1):
-            log(f"  building trail insert {i} of {len(insert_blanks)}")
-            m = meshlib.boolean("intersection", [raised, blank])
-            # A path that wanders off the plate and back can leave detached crumbs.
-            m, dropped = meshlib.drop_small_components(m, min_volume=2.0)
-            if dropped:
+        elif trail_base == "flat":
+            z_floor = trail_z_min - cfg.trail_thickness
+            if z_floor < MIN_FLOOR_MM:
+                z_floor = MIN_FLOOR_MM
                 warnings.append(
-                    f"discarded {dropped} tiny detached fragment(s) from trail {i}"
+                    f"channel floor raised to {MIN_FLOOR_MM} mm to keep material under "
+                    f"the slot; the insert is {trail_z_min - z_floor:.1f} mm thick at its "
+                    f"thinnest instead of {cfg.trail_thickness:.1f} mm. Increase --base "
+                    f"or reduce --trail-thickness to restore it."
                 )
-            parts[i - 1].mesh = m
-            trail_meshes.append(m)
+            cutter = meshlib.extrude(cut_poly, height=z_top - z_floor, z0=z_floor)
+            insert_blanks = [
+                meshlib.extrude(pt.polygon, height=z_top - z_floor, z0=z_floor)
+                for pt in parts
+            ]
+            below = None
+            insert_h = (trail_z_min - z_floor, trail_z_max - z_floor + cfg.trail_proud)
+        else:
+            below = meshlib.heightfield_solid(X, Y, Z_mm - cfg.trail_thickness, -5.0)
+            tall_cut = meshlib.extrude(cut_poly, height=z_top + 10.0, z0=-6.0)
+            cutter = meshlib.boolean("difference", [tall_cut, below])
+            insert_blanks = [
+                meshlib.boolean(
+                    "difference",
+                    [meshlib.extrude(pt.polygon, height=z_top + 10.0, z0=-6.0), below],
+                )
+                for pt in parts
+            ]
+            z_floor = float(trail_z_min - cfg.trail_thickness)
+            insert_h = (
+                cfg.trail_thickness + cfg.trail_proud,
+                cfg.trail_thickness + cfg.trail_proud,
+            )
 
-        trail_mesh = trail_meshes[0]
+        if not cfg.route_only:
+            log(f"  cutting {len(parts)} trail channel(s)")
+            map_mesh = meshlib.boolean("difference", [terrain, cutter])
+
+            raised = meshlib.heightfield_solid(X, Y, Z_mm + cfg.trail_proud, -1.0)
+            trail_meshes = []
+            for i, blank in enumerate(insert_blanks, 1):
+                log(f"  building trail insert {i} of {len(insert_blanks)}")
+                m = meshlib.boolean("intersection", [raised, blank])
+                # A path that wanders off the plate and back can leave detached crumbs.
+                m, dropped = meshlib.drop_small_components(m, min_volume=2.0)
+                if dropped:
+                    warnings.append(
+                        f"discarded {dropped} tiny detached fragment(s) from trail {i}"
+                    )
+                parts[i - 1].mesh = m
+                trail_meshes.append(m)
+
+            trail_mesh = trail_meshes[0]
 
     # ------------------------------------------- plinth: caption, scale, north
     scale_info = None
@@ -713,14 +738,14 @@ def build(cfg) -> Build:
         map_meshes = [map_mesh]
 
     # ------------------------------------------------------------------ stats
-    length_m = gpx_io.track_length_m(track)
+    length_m = 0.0 if map_only else gpx_io.track_length_m(track)
     gain = 0.0
     if track.ele is not None and len(track.ele) > 1:
         d = np.diff(track.ele)
         gain = float(np.sum(d[d > 0]))
 
-    tb = trail_mesh.bounds
     mb = map_mesh.bounds
+    tb = trail_mesh.bounds if trail_mesh is not None else ((0, 0, 0), (0, 0, 0))
     section_stats = []
     for pt in parts:
         sb = pt.mesh.bounds
@@ -741,7 +766,11 @@ def build(cfg) -> Build:
             "watertight": bool(pt.mesh.is_watertight),
         })
     stats = {
-        "track_name": track.name,
+        "track_name": (
+            f"{gpx_io.parse_coordinate(cfg.centre)[0]:.4f}, "
+            f"{gpx_io.parse_coordinate(cfg.centre)[1]:.4f}"
+            if map_only else track.name
+        ),
         "points": len(track),
         "length_km": length_m / 1000.0,
         "ascent_m": gain,
@@ -758,6 +787,9 @@ def build(cfg) -> Build:
         "merge_distance_mm": cfg.merge_distance_mm,
         "join_distance_m": cfg.join_distance_m,
         "route_only": cfg.route_only,
+        "map_only": map_only,
+        "centre": cfg.centre,
+        "across_km": cfg.across_km if map_only else None,
         "altitude_datum_m": datum_m,
         "altitude_offset_m": cfg.altitude_offset_m,
         "scale_set_explicitly": cfg.scale_denominator is not None,
@@ -785,7 +817,11 @@ def build(cfg) -> Build:
         "total_clearance_mm": 2.0 * cfg.tolerance,
         "channel_floor_z": z_floor,
         "map_health": meshlib.health(map_mesh),
-        "trail_health": meshlib.health(trail_mesh),
+        "trail_health": (
+            meshlib.health(trail_mesh) if trail_mesh is not None
+            else {"watertight": True, "faces": 0, "bodies": 0, "volume_mm3": 0.0,
+                  "winding_consistent": True}
+        ),
     }
 
     if not map_mesh.is_watertight:

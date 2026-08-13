@@ -105,13 +105,19 @@ def render(build, cfg, path: str, dpi: int = 170) -> str:
     # ------------------------------------------------------------ title block
     ax0 = fig.add_subplot(gs[0])
     ax0.axis("off")
-    title = st["track_name"] or "Hiking route"
+    map_only = bool(st.get("map_only"))
+    title = st["track_name"] or ("Map" if map_only else "Hiking route")
     ax0.text(0, 0.62, title, fontsize=16, weight="bold", color=INK, va="center")
     ax0.text(
         0,
         0.02,
-        f"{st['length_km']:.1f} km   ·   {st['ascent_m']:.0f} m ascent   ·   "
-        f"{st['elev_min_m']:.0f}–{st['elev_max_m']:.0f} m",
+        (
+            f"{st['across_km']:g} km across   ·   "
+            f"{st['elev_min_m']:.0f}–{st['elev_max_m']:.0f} m"
+            if map_only else
+            f"{st['length_km']:.1f} km   ·   {st['ascent_m']:.0f} m ascent   ·   "
+            f"{st['elev_min_m']:.0f}–{st['elev_max_m']:.0f} m"
+        ),
         fontsize=9.5,
         color="#5a6068",
         va="center",
@@ -302,7 +308,17 @@ def render(build, cfg, path: str, dpi: int = 170) -> str:
     ]
     with_ele = [(p, c, s) for p, c, s in with_ele if s]
 
-    if with_ele:
+    if map_only:
+        # No route to plot a profile for, so show how the ground is distributed
+        # by height instead, which says something about the terrain being printed.
+        z = np.asarray(b.Z_m).ravel()
+        axp.hist(z, bins=60, color="#6f8f57", edgecolor="none")
+        axp.set_xlabel("elevation (m)", fontsize=8, color="#5a6068")
+        axp.set_ylabel("how much ground", fontsize=8, color="#5a6068")
+        axp.set_yticks([])
+        axp.set_title("how the ground is spread by height", fontsize=8,
+                      color="#5a6068", pad=4)
+    elif with_ele:
         from .gpx_io import meters_per_degree
 
         floor = min(float(np.min(s.ele)) for _, _, ss in with_ele for s in ss)
@@ -347,7 +363,12 @@ def render(build, cfg, path: str, dpi: int = 170) -> str:
     axf.axis("off")
     tw, td = st["trail_size_mm"], st["insert_thickness_mm"]
     ms = st["map_size_mm"]
-    if cfg.route_only:
+    if map_only:
+        footer = (
+            f"one object  {ms[0]:.0f} × {ms[1]:.0f} × {ms[2]:.1f} mm        "
+            f"{st['across_km']:g} km across        1:{st['scale_denominator']:,.0f}"
+        )
+    elif cfg.route_only:
         footer = (
             f"one object  {ms[0]:.0f} × {ms[1]:.0f} × {ms[2]:.1f} mm        "
             f"route stands {ms[2] - cfg.base_mm:.1f} mm above a "

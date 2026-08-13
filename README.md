@@ -20,6 +20,13 @@ continuous path; anything that doesn't connect becomes its own piece, so a multi
 with a rest-day side trip prints as `walk_trail1.3mf`, `walk_trail2.3mf`, … each in its
 own colour.
 
+**No walk at all?** Give it a coordinate instead and get the landscape around a place,
+with no route on it, as a single piece:
+
+```bash
+python -m gpx2print --at 56.7969,-5.0037 --across 6 --caption "Ben Nevis"
+```
+
 ## No terminal? Start here
 
 Double-click the launcher for your computer — **`Start Map Maker (Mac).command`**,
@@ -84,6 +91,8 @@ python -m gpx2print walk.gpx --dry-run --preview walk.png
 
 | Option | Default | What it does |
 | --- | --- | --- |
+| `--at LAT,LON` | — | Build a map around a coordinate instead of a route. |
+| `--across KM` | 5 | How much ground an `--at` map covers, edge to edge. |
 | `--size MM` | 150 | Longest edge of the map. Everything else scales with it. |
 | `--scale N` | — | Set the scale instead: `50000` gives 1:50,000 and the plate comes out as big as it needs to. |
 | `--altitude-offset M` | 0 | Move the height the relief is measured from, in metres. |
@@ -211,6 +220,26 @@ An open route that stays inside the map leaves it in one piece, exactly as befor
 
 `--trail-base follow` is ignored here, since the route has to reach the bottom of the
 map to be pushed through it.
+
+### A map of a place, with no route
+
+```bash
+python -m gpx2print --at 56.7969,-5.0037 --across 6 --shape circle
+python -m gpx2print --at "56.7969N 5.0037W" --across 12 --scale 60000
+```
+
+No GPX at all: give a latitude and longitude and how much ground to cover, and you get
+the landscape around that point. There is no trail, so it comes out as **one file, one
+piece, one colour**.
+
+The coordinate is read from decimal degrees, separated by a comma, a slash or a space,
+with an optional N/S/E/W: `56.7969,-5.0037`, `56.7969 -5.0037` and `56.7969N 5.0037W`
+all mean the same place.
+
+Everything else still applies — shapes, the caption strip, the scale bar, the north
+arrow, an explicit `--scale`, the altitude datum. The preview swaps the elevation
+profile for a histogram of how the ground is spread by height, since there is no route
+to plot along.
 
 ### Setting the scale, or the datum
 

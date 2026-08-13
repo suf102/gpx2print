@@ -130,11 +130,15 @@ def export_parts(
     common = {"Description": desc, "Copyright": credit, "LicenseTerms": credit}
 
     keep = layout == "assembled"
-    trails = b.trail_meshes or [b.trail_mesh]
+    map_only = bool(b.stats.get("map_only"))
+    trails = [] if map_only else (b.trail_meshes or [b.trail_mesh])
     route_only = bool(b.stats.get("route_only"))
     written: list[str] = []
 
-    if route_only:
+    if map_only:
+        # Nothing but landscape, so one object and one file.
+        jobs = [(out_path, b.map_mesh, "Map", cfg.map_color)]
+    elif route_only:
         # The route is already welded to its base, so there is one object and one
         # file. Nothing to fit together, nothing to keep in register.
         jobs = [(out_path, b.map_mesh, "Route", cfg.map_color)]
@@ -180,7 +184,7 @@ def export_parts(
                 b.warnings.append(f"{Path(path).name}: {why}")
         log(f"wrote {path} ({Path(path).stat().st_size / 1024:,.0f} kB){note}")
 
-    if combined and not route_only:
+    if combined and not route_only and not map_only:
         map_off, trail_off = layout_offsets(b, layout)
         parts = [
             {
@@ -217,7 +221,7 @@ def export_parts(
 
     if stl:
         stem = str(Path(out_path).with_suffix(""))
-        if route_only:
+        if route_only or map_only:
             items = [(".stl", b.map_mesh)]
         else:
             items = [("_map.stl", b.map_mesh)]

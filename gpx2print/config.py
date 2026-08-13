@@ -12,6 +12,16 @@ class Config:
     gpx_path: str = ""
     """Convenience for the single-file case; folded into gpx_paths."""
 
+    centre: str | None = None
+    """A coordinate to build a map around, instead of a GPX file.
+
+    'lat,lon' in decimal degrees. With this set there is no route: you get the
+    landscape on its own, as a single piece.
+    """
+
+    across_km: float = 5.0
+    """How much ground a map built from a coordinate covers, edge to edge."""
+
     join_distance_m: float = 200.0
     """How close two ends must be to count as the same path, in metres."""
 
@@ -191,6 +201,11 @@ class Config:
     # populated during the build, not set by the user
     stats: dict = field(default_factory=dict)
 
+    @property
+    def map_only(self) -> bool:
+        """A map built around a point has no route, so no trail parts."""
+        return bool(self.centre) and not self.gpx_paths
+
     def __post_init__(self) -> None:
         # Accept either a single path or a list, and keep both views in step.
         if isinstance(self.gpx_paths, str):
@@ -201,8 +216,13 @@ class Config:
             self.gpx_path = self.gpx_paths[0]
 
     def validate(self) -> None:
-        if not self.gpx_paths:
-            raise ValueError("no GPX file given")
+        if not self.gpx_paths and not self.centre:
+            raise ValueError(
+                "give a GPX file, or a coordinate with --at to make a map with "
+                "no route on it"
+            )
+        if self.centre and self.across_km <= 0:
+            raise ValueError("--across must be greater than zero")
         if self.join_distance_m < 0:
             raise ValueError("--join-distance cannot be negative")
         if self.merge_distance_mm < 0:

@@ -44,6 +44,8 @@ def command_line(cfg, out_path: str, combined=False, stl=False,
     """
     argv: list[str] = ["gpx2print"]
     argv += [str(p) for p in cfg.gpx_paths]
+    if cfg.centre:
+        argv += ["--at", str(cfg.centre), "--across", f"{cfg.across_km:g}"]
     argv += ["-o", str(out_path)]
 
     if preview:
@@ -170,6 +172,10 @@ def render(b, cfg, written: list[str], out_path: str, combined=False, stl=False,
 
     add(_rule("INPUT"))
     add("")
+    if not cfg.gpx_paths:
+        add(f"  No route. Built around {cfg.centre}, "
+            f"{cfg.across_km:g} km of ground across.")
+        add("")
     for p in cfg.gpx_paths:
         name = Path(p).name
         size = Path(p).stat().st_size if Path(p).exists() else 0
@@ -186,6 +192,9 @@ def render(b, cfg, written: list[str], out_path: str, combined=False, stl=False,
         ("Overall size",
          f"set by scale, 1:{cfg.scale_denominator:,.0f}"
          if cfg.scale_denominator else f"{cfg.size_mm:g} mm along the longest edge"),
+        ("Built from",
+         f"the coordinate {cfg.centre}, {cfg.across_km:g} km across"
+         if cfg.centre and not cfg.gpx_paths else "a GPX route"),
         ("Plate shape", cfg.shape),
         ("Caption strip", f"along the {cfg.caption_position}"),
         ("Route fitted", f"from the {cfg.trail_entry}"),

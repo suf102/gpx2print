@@ -191,6 +191,28 @@ class App(tk.Tk):
             foreground=HINT, font=("", 10), wraplength=390, justify="left",
         ).pack(anchor="w", pady=(2, 0))
 
+        ttk.Separator(g).pack(fill="x", pady=(9, 5))
+        ttk.Label(g, text="…or no walk at all: just a place",
+                  foreground=HINT, font=("", 10, "bold")).pack(anchor="w")
+        line = ttk.Frame(g)
+        line.pack(fill="x", pady=(3, 0))
+        ttk.Label(line, text="Coordinate").pack(side="left")
+        self.at_var = tk.StringVar(value="")
+        ttk.Entry(line, textvariable=self.at_var, width=22).pack(side="right")
+        line = ttk.Frame(g)
+        line.pack(fill="x", pady=(4, 0))
+        ttk.Label(line, text="Ground covered (km)").pack(side="left")
+        self.across_var = tk.DoubleVar(value=5.0)
+        ttk.Spinbox(line, from_=0.2, to=200, increment=1, width=7,
+                    textvariable=self.across_var, format="%.1f").pack(side="right")
+        ttk.Label(
+            g,
+            text="Type a latitude and longitude, like 56.7969,-5.0037, to print the "
+                 "landscape around a place with no route on it. Leave it blank if "
+                 "you chose files above.",
+            foreground=HINT, font=("", 10), wraplength=390, justify="left",
+        ).pack(anchor="w", pady=(2, 0))
+
         self.out_var = tk.StringVar(value=str(Path.home() / "Desktop"))
         line = ttk.Frame(g)
         line.pack(fill="x", pady=(8, 0))
@@ -518,8 +540,18 @@ class App(tk.Tk):
 
     # -------------------------------------------------------------- the config
     def _collect(self) -> Config:
-        if not self.gpx_files:
-            raise ValueError("Choose a GPX file first.")
+        at = self.at_var.get().strip()
+        if not self.gpx_files and not at:
+            raise ValueError(
+                "Choose a GPX file, or type a coordinate to make a map of a place "
+                "with no route on it."
+            )
+        if at and not self.gpx_files:
+            from .gpx_io import parse_coordinate
+            try:
+                parse_coordinate(at)
+            except ValueError as exc:
+                raise ValueError(str(exc)) from None
         missing = [p for p in self.gpx_files if not Path(p).is_file()]
         if missing:
             names = "\n".join(Path(p).name for p in missing)
@@ -531,6 +563,8 @@ class App(tk.Tk):
 
         return Config(
             gpx_paths=list(self.gpx_files),
+            centre=(at or None),
+            across_km=float(self.across_var.get()),
             join_distance_m=self.join.get(),
             scale_denominator=(self.scale.get() or None),
             altitude_offset_m=self.alt.get(),

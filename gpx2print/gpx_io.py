@@ -128,6 +128,63 @@ def drop_duplicates(track: Track, min_step_m: float = 1.0) -> Track:
     )
 
 
+def parse_coordinate(text: str) -> tuple[float, float]:
+    """Read 'lat,lon' in decimal degrees, however it is punctuated.
+
+    Accepts a comma, a slash or plain whitespace between the two, and a trailing
+    N/S/E/W on either. Anything else is rejected with a message that says what was
+    expected rather than what went wrong internally.
+    """
+    import re
+
+    raw = text.strip().replace("/", " ").replace(",", " ")
+    parts = [p for p in re.split(r"\s+", raw) if p]
+    if len(parts) != 2:
+        raise ValueError(
+            f"could not read {text!r} as a coordinate. Give latitude then "
+            f"longitude in decimal degrees, for example 56.7969,-5.0037"
+        )
+
+    out = []
+    for part, positive, negative, limit in (
+        (parts[0], "N", "S", 90.0),
+        (parts[1], "E", "W", 180.0),
+    ):
+        sign = 1.0
+        token = part.upper()
+        if token.endswith(positive) or token.endswith(negative):
+            sign = -1.0 if token.endswith(negative) else 1.0
+            token = token[:-1]
+        try:
+            value = float(token) * sign
+        except ValueError:
+            raise ValueError(
+                f"could not read {part!r} as a number of degrees"
+            ) from None
+        if abs(value) > limit:
+            raise ValueError(f"{value} is outside the range +/-{limit:g} degrees")
+        out.append(value)
+    return out[0], out[1]
+
+
+def area_track(lat: float, lon: float, across_km: float) -> Track:
+    """A stand-in track marking out a square of ground around a point.
+
+    The rest of the pipeline frames the map from a track, so a map with no route
+    is given the corners of the area it should cover and nothing else.
+    """
+    mx, my = meters_per_degree(lat)
+    half_lon = (across_km * 1000.0 / 2.0) / mx
+    half_lat = (across_km * 1000.0 / 2.0) / my
+    return Track(
+        lat=np.array([lat - half_lat, lat + half_lat], dtype=float),
+        lon=np.array([lon - half_lon, lon + half_lon], dtype=float),
+        ele=None,
+        name="",
+        seg=np.array([0, 0], dtype=int),
+    )
+
+
 def frame_for_box(
     frame: Frame, x0: float, y0: float, x1: float, y1: float,
     size_mm: float | None,
