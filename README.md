@@ -96,6 +96,8 @@ python -m gpx2print walk.gpx --dry-run --preview walk.png
 | `--no-scale-bar` | on | Drop the chequered distance scale. |
 | `--no-north-arrow` | on | Drop the north arrow. |
 | `--route-only` | off | Drop the landscape: just the route on a flat base. |
+| `--shape` | rectangle | `rectangle`, `square`, `circle`, `triangle`, `pentagon`, `hexagon` or `octagon`. |
+| `--caption-position` | bottom | Which side the caption strip sits on: `bottom` or `top`. |
 | `--margin F` | 0.15 | How much terrain to show around the track, as a fraction of its extent. |
 | `--trail-entry` | top | `top` drops the route into a groove; `bottom` pushes it up through a slot cut right through. |
 | `--trail-base` | flat | `flat` prints without support; `follow` is compact but needs support. |
@@ -207,6 +209,25 @@ An open route that stays inside the map leaves it in one piece, exactly as befor
 
 `--trail-base follow` is ignored here, since the route has to reach the bottom of the
 map to be pushed through it.
+
+### The shape of the plate
+
+```bash
+python -m gpx2print walk.gpx --shape hexagon --caption "Ben Nevis"
+python -m gpx2print walk.gpx --shape circle --caption-position top
+```
+
+The plate can be a **rectangle, square, circle, triangle, pentagon, hexagon or
+octagon**. Whichever you pick is **grown until it contains the whole route**, then the
+map is scaled back down so the finished piece still measures `--size` across. Inscribing
+the shape instead would have been simpler, and would have cropped the corners off the map
+and taken part of the walk with them.
+
+The caption strip attaches to the bottom by default, or the top with
+`--caption-position top`. Where a shape meets the strip at a point or a tangent — a
+triangle's apex, a circle's edge — the strip reaches far enough into the plate to make a
+join at least 25 mm wide, rather than hanging off a sliver. It says so if it still cannot
+manage a sound join.
 
 ### The plinth
 

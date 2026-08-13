@@ -83,8 +83,13 @@ def render(build, cfg, path: str, dpi: int = 170) -> str:
     band = float(getattr(b, "band_mm", 0.0) or 0.0)
     W, H = frame.width_mm, frame.height_mm
 
-    # Terrain rows only; the plinth is drawn separately.
-    Z_mm = b.Z_mm[2:, :] if band > 0 else b.Z_mm
+    # Terrain rows only; the strip is drawn separately, and it may be on either
+    # side, so trim whichever end it was added to.
+    on_top = st.get("caption_position", "bottom") == "top"
+    if band > 0:
+        Z_mm = b.Z_mm[:-2, :] if on_top else b.Z_mm[2:, :]
+    else:
+        Z_mm = b.Z_mm
     Z_m = b.Z_m
 
     aspect = (H + band) / W
@@ -145,18 +150,42 @@ def render(build, cfg, path: str, dpi: int = 170) -> str:
     norm = plt.Normalize(np.min(Z_m), max(np.max(Z_m), np.min(Z_m) + 1e-6))
     rgb = cmap(norm(Z_m))[:, :, :3]
 
+    # The plate may not be a rectangle; everything terrain-ish is clipped to it.
+    plate = getattr(b, "plate_poly", None)
+    plate_path = _poly_path(plate) if plate is not None else None
+
+    def clip_to_plate(artist):
+        if plate_path is None:
+            return artist
+        from matplotlib.patches import PathPatch as _PP
+
+        patch = _PP(plate_path, transform=ax.transData, facecolor="none",
+                    edgecolor="none")
+        ax.add_patch(patch)
+        try:
+            artist.set_clip_path(patch)
+        except AttributeError:
+            for c in getattr(artist, "collections", []):
+                c.set_clip_path(patch)
+        return artist
+
     if cfg.route_only:
         # Nothing is printed here but a flat plate, so don't draw a landscape that
         # will not exist on the model.
-        ax.add_patch(
-            Rectangle((0, 0), W, H, facecolor="#e4dfd4", edgecolor="none", zorder=1)
-        )
+        from matplotlib.patches import PathPatch as _PP0
+
+        if plate_path is not None:
+            ax.add_patch(_PP0(plate_path, facecolor="#e4dfd4", edgecolor="none",
+                              zorder=1))
+        else:
+            ax.add_patch(Rectangle((0, 0), W, H, facecolor="#e4dfd4",
+                                   edgecolor="none", zorder=1))
     else:
         shade = _hillshade(Z_mm, dx, dy, exaggeration=1.6)[:, :, None]
         blended = np.clip(rgb * (0.35 + 0.75 * shade), 0, 1)
-        ax.imshow(
+        clip_to_plate(ax.imshow(
             blended, extent=extent, origin="lower", interpolation="bilinear", zorder=1
-        )
+        ))
 
     # contour lines at a round interval
     rng = st["relief_m"]
@@ -173,8 +202,18 @@ def render(build, cfg, path: str, dpi: int = 170) -> str:
         zorder=2,
     )
     if cs is not None:
-        ax.clabel(cs, cs.levels[::2], inline=True, fontsize=5.5, fmt="%d",
-                  colors="#3a3a3a")
+        clip_to_plate(cs)
+        labels = ax.clabel(cs, cs.levels[::2], inline=True, fontsize=5.5, fmt="%d",
+                           colors="#3a3a3a")
+        # Clipping the contour lines leaves their labels floating outside the
+        # plate, so drop any that do not sit on it.
+        if plate is not None:
+            from shapely.geometry import Point as _Pt
+
+            for t in labels or []:
+                x, y = t.get_position()
+                if not plate.contains(_Pt(x, y)):
+                    t.set_visible(False)
 
     # each section at its true channel width, in the colour it will print
     from matplotlib.patches import PathPatch
@@ -200,15 +239,20 @@ def render(build, cfg, path: str, dpi: int = 170) -> str:
         ax.plot(sx[0], sy[0], "o", ms=6, mfc="#ffffff", mec=INK, mew=1.4, zorder=6)
         ax.plot(sx[1], sy[1], "s", ms=6, mfc=INK, mec="#ffffff", mew=1.2, zorder=6)
 
-    # plate outline and caption plinth
-    ax.add_patch(
-        Rectangle((0, 0), W, H, fill=False, ec=INK, lw=1.4, zorder=7)
-    )
+    # plate outline and caption strip
+    from matplotlib.patches import PathPatch as _PP2
+
+    if plate_path is not None:
+        ax.add_patch(_PP2(plate_path, fill=False, ec=INK, lw=1.4, zorder=7))
+        pminx, pminy, pmaxx, pmaxy = plate.bounds
+    else:
+        ax.add_patch(Rectangle((0, 0), W, H, fill=False, ec=INK, lw=1.4, zorder=7))
+        pminx, pminy, pmaxx, pmaxy = 0.0, 0.0, W, H
     if band > 0:
+        sy = pmaxy if on_top else pminy - band
         ax.add_patch(
-            Rectangle(
-                (0, -band), W, band, facecolor="#e8e3d9", ec=INK, lw=1.4, zorder=7
-            )
+            Rectangle((pminx, sy), pmaxx - pminx, band,
+                      facecolor="#e8e3d9", ec=INK, lw=1.4, zorder=7)
         )
         # Draw the very polygons the model is built from, so the preview cannot
         # drift out of step with what actually prints.
@@ -229,15 +273,18 @@ def render(build, cfg, path: str, dpi: int = 170) -> str:
                         )
                     )
 
-    ax.set_xlim(-W * 0.02, W * 1.02)
-    ax.set_ylim(-band - H * 0.02, H * 1.02)
+    pad = max(W, H) * 0.02
+    lo_y = (pminy if not on_top else pminy) - (0 if on_top else band) - pad
+    hi_y = (pmaxy + band if on_top else pmaxy) + pad
+    ax.set_xlim(pminx - pad, pmaxx + pad)
+    ax.set_ylim(lo_y, hi_y)
     ax.set_aspect("equal")
     ax.set_xticks([])
     ax.set_yticks([])
     for s in ax.spines.values():
         s.set_visible(False)
     ax.set_title(
-        f"printed footprint  {W:.0f} × {H + band:.0f} mm",
+        f"printed footprint  {pmaxx - pminx:.0f} × {pmaxy - pminy + band:.0f} mm",
         fontsize=8.5,
         color="#5a6068",
         pad=6,

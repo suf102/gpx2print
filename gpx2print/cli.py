@@ -83,6 +83,17 @@ def build_parser() -> argparse.ArgumentParser:
                    help="leave out the surrounding landscape: the route stands on "
                         "a flat base carrying the caption, scale bar and north "
                         "arrow. The route still follows real terrain height")
+    g.add_argument("--shape", choices=("rectangle","square","circle","triangle",
+                                      "pentagon","hexagon","octagon"),
+                   default=d.shape,
+                   help=f"outline of the map plate. Anything other than a "
+                        f"rectangle is grown to hold the whole route, then scaled "
+                        f"so the longest edge is still --size "
+                        f"(default: {d.shape})")
+    g.add_argument("--caption-position", choices=("bottom","top"),
+                   default=d.caption_position,
+                   help=f"which side the caption strip sits on "
+                        f"(default: {d.caption_position})")
     g.add_argument("--square", action="store_true",
                    help="force a square footprint")
     g.add_argument("--z-scale", type=float, default=d.z_scale,
@@ -200,6 +211,8 @@ def args_to_config(a) -> Config:
         merge_distance_mm=a.merge_distance,
         size_mm=a.size,
         margin=a.margin,
+        shape=a.shape,
+        caption_position=a.caption_position,
         square=a.square,
         route_only=a.route_only,
         z_scale=a.z_scale,

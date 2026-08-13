@@ -33,6 +33,18 @@ class Config:
     margin: float = 0.15
     """Terrain padding around the track, as a fraction of the track's bounding box."""
 
+    shape: str = "rectangle"
+    """Outline of the plate: rectangle, square, circle, triangle, pentagon,
+    hexagon or octagon.
+
+    The shape is grown until it contains the whole terrain rectangle, then the
+    map is scaled back down so its longest edge is still --size. An inscribed
+    shape would crop the corners off the map and take part of the route with it.
+    """
+
+    caption_position: str = "bottom"
+    """Which side of the plate the caption strip is attached to: bottom or top."""
+
     square: bool = False
     """Force a square map footprint instead of matching the track's aspect ratio."""
 
@@ -191,6 +203,11 @@ class Config:
             raise ValueError("--grid must be at least 40")
         if self.grid > 900:
             raise ValueError("--grid above 900 makes meshes too heavy to slice")
+        from .shapes import SHAPES
+        if self.shape not in SHAPES:
+            raise ValueError(f"--shape must be one of: {', '.join(SHAPES)}")
+        if self.caption_position not in ("bottom", "top"):
+            raise ValueError("--caption-position must be 'bottom' or 'top'")
         if self.trail_entry not in ("top", "bottom"):
             raise ValueError("--trail-entry must be 'top' or 'bottom'")
         if self.trail_base not in ("flat", "follow"):

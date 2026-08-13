@@ -9,7 +9,7 @@ import trimesh
 from shapely.geometry import LineString, MultiLineString, box
 from shapely.ops import unary_union
 
-from . import chain, dem, gpx_io, legend, meshlib, text3d
+from . import chain, dem, gpx_io, legend, meshlib, shapes, text3d
 
 MIN_FLOOR_MM = 1.2
 """Material left under the deepest point of the channel."""
@@ -32,6 +32,7 @@ class Build:
     Z_m: np.ndarray = None
     path_mm: MultiLineString = None
     plinth_polys: object = None
+    plate_poly: object = None
     band_mm: float = 0.0
     stats: dict = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
@@ -184,6 +185,27 @@ def _connect(poly, width: float, clip):
     return unary_union(geoms), bridges
 
 
+def _strip_overlap(plate, on_top: bool, want_mm: float) -> tuple[float, float]:
+    """How far the caption strip must reach into the plate to hold on.
+
+    Butted against a flat edge the join is the full width, but a circle meets it
+    at a tangent and a triangle at a point, which would leave the strip hanging
+    off a sliver. Push the strip in until the join is wide enough to survive
+    being handled. Returns the overlap and the join width it achieved.
+    """
+    x0, y0, x1, y1 = plate.bounds
+    lap = 0.3
+    best = 0.0
+    for _ in range(30):
+        y = (y1 - lap) if on_top else (y0 + lap)
+        seg = plate.intersection(LineString([(x0 - 5, y), (x1 + 5, y)]))
+        best = seg.length
+        if best >= want_mm or lap > (y1 - y0) * 0.25:
+            break
+        lap *= 1.4
+    return lap, best
+
+
 def _ribbon(path, width: float, clip):
     """Offset the path into a closed band of the given total width."""
     poly = path.buffer(
@@ -225,6 +247,16 @@ def build(cfg) -> Build:
     # One Track covering everything, used for framing and terrain.
     track = _merged_track(sections)
     frame = gpx_io.build_frame(track, cfg.size_mm, cfg.margin, cfg.square)
+
+    # A shape that is not a rectangle has to grow until it swallows the whole
+    # track rectangle, or it would crop the corners off the map and take part of
+    # the route with them. Widen the window to that shape's bounding box, then
+    # rescale so the finished piece still measures --size across.
+    if cfg.shape != "rectangle":
+        grown = shapes.outline(cfg.shape, frame.width_mm, frame.height_mm)
+        gx0, gy0, gx1, gy1 = grown.bounds
+        frame = gpx_io.expand_frame(frame, gx1 - gx0, gy1 - gy0, cfg.size_mm)
+        log(f"  {cfg.shape} plate, {frame.width_mm:.0f} x {frame.height_mm:.0f} mm")
     ny, nx = _grid_shape(frame, cfg.grid)
     log(
         f"  map area: {frame.width_mm:.1f} x {frame.height_mm:.1f} mm, "
@@ -270,11 +302,22 @@ def build(cfg) -> Build:
     # them brings it into existence.
     wants_plinth = bool(cfg.caption) or cfg.scale_bar or cfg.north_arrow
     band = cfg.caption_height_mm if wants_plinth else 0.0
+    strip_on_top = cfg.caption_position == "top"
+
+    # The outline the plate is cut to. Everything else is measured against it, so
+    # the strip lines up with the shape rather than with the terrain rectangle.
+    plate_poly = shapes.fill(cfg.shape, frame.width_mm, frame.height_mm)
+    pminx, pminy, pmaxx, pmaxy = plate_poly.bounds
+
     if band > 0:
-        # Two extra rows: one at the plinth's outer edge, one right beneath the
+        # Two extra rows: one at the strip's outer edge, one hard against the
         # terrain, so the flat band cannot be tilted by the first terrain row.
-        y_1d = np.concatenate([[-band, -1e-3], y_1d])
-        Z_mm = np.vstack([np.full((2, nx), cfg.base_mm), Z_mm])
+        if strip_on_top:
+            y_1d = np.concatenate([y_1d, [pmaxy + 1e-3, pmaxy + band]])
+            Z_mm = np.vstack([Z_mm, np.full((2, nx), cfg.base_mm)])
+        else:
+            y_1d = np.concatenate([[pminy - band, pminy - 1e-3], y_1d])
+            Z_mm = np.vstack([np.full((2, nx), cfg.base_mm), Z_mm])
         ny += 2
 
     X, Y = np.meshgrid(x_1d, y_1d)
@@ -295,8 +338,44 @@ def build(cfg) -> Build:
 
     terrain = meshlib.heightfield_solid(X, Y, Z_plate, 0.0)
 
+    # A square plate already fills the grid, so intersecting with it would only
+    # hand the boolean two coincident walls to argue about. Only clip when the
+    # outline actually removes something.
+    needs_clip = cfg.shape != "rectangle" and not plate_poly.buffer(1e-6).covers(
+        box(0.0, 0.0, frame.width_mm, frame.height_mm)
+    )
+    if needs_clip:
+        # Cut the plate down to its outline. The strip is squared off and joins
+        # the shape, so clip to the two together rather than to the shape alone.
+        clip_poly = plate_poly
+        if band > 0:
+            # Overlap the strip a little way into the plate. Butted exactly against
+            # it, the strip's edge, the plate's outline and a row of the terrain
+            # grid all land on the same plane, and the clip boolean returns a
+            # surface that only looks closed until something merges its vertices.
+            want = min(25.0, (pmaxx - pminx) * 0.25)
+            lap, neck = _strip_overlap(plate_poly, strip_on_top, want)
+            if neck < 8.0:
+                warnings.append(
+                    f"the caption strip meets the {cfg.shape} over only "
+                    f"{neck:.1f} mm and will snap off easily. Put the strip on the "
+                    f"shape's flat side with --caption-position, or choose a "
+                    f"different --shape."
+                )
+            if strip_on_top:
+                strip = box(pminx, pmaxy - lap, pmaxx, pmaxy + band)
+            else:
+                strip = box(pminx, pminy - band, pmaxx, pminy + lap)
+            clip_poly = unary_union([plate_poly, strip]).buffer(0)
+        tall = float(np.max(Z_mm)) + 10.0
+        log(f"  cutting the plate to a {cfg.shape}")
+        terrain = meshlib.boolean(
+            "intersection",
+            [terrain, meshlib.extrude(clip_poly, height=tall + 10.0, z0=-5.0)],
+        )
+
     # ------------------------------------------------------------ trail paths
-    plate = box(0.0, 0.0, frame.width_mm, frame.height_mm)
+    plate = plate_poly
     lines = [_section_line(s, frame, cfg.trail_simplify) for s in sections]
 
     keep, keep_lines, ins_polys = [], [], []
@@ -485,8 +564,8 @@ def build(cfg) -> Build:
     scale_info = None
     plinth_polys = None
     if band > 0:
-        W = frame.width_mm
-        y_mid = -band / 2.0
+        W = pmaxx - pminx
+        y_mid = (pmaxy + band / 2.0) if strip_on_top else (pminy - band / 2.0)
         edge = band * 0.28
         features = []
 
@@ -496,7 +575,8 @@ def build(cfg) -> Build:
 
         if cfg.scale_bar and scale_max > 5:
             bar, metres, drawn = legend.scale_bar(
-                frame.mm_per_m, edge, y_mid, scale_max, band, cfg.caption_font
+                frame.mm_per_m, pminx + edge, y_mid, scale_max, band,
+                cfg.caption_font
             )
             features.append(bar)
             scale_info = (metres, drawn)
@@ -504,14 +584,14 @@ def build(cfg) -> Build:
 
         if cfg.north_arrow:
             features.append(
-                legend.north_arrow(W - edge - north_w / 2.0, y_mid, band,
+                legend.north_arrow(pmaxx - edge - north_w / 2.0, y_mid, band,
                                    cfg.caption_font)
             )
             log("  north arrow on the plinth")
 
         if cfg.caption:
-            left = edge + (scale_info[1] if scale_info else 0.0)
-            right = W - edge - north_w
+            left = pminx + edge + (scale_info[1] if scale_info else 0.0)
+            right = pmaxx - edge - north_w
             gap = band * 0.55
             avail = max(right - left - 2 * gap, W * 0.18)
             log(f"  {cfg.caption_style}ing caption {cfg.caption!r}")
@@ -546,17 +626,17 @@ def build(cfg) -> Build:
     credit_text, credit_short = dem.engraved_credit_for(source)
     credit_lines: list[str] = []
     if cfg.credit:
-        box_w = frame.width_mm * 0.86
+        box_w = (pmaxx - pminx) * 0.86
         if band > 0:
             box_h = band * 0.72
-            cy = -band / 2.0
+            cy = (pmaxy + band / 2.0) if strip_on_top else (pminy - band / 2.0)
         else:
-            box_h = min(frame.height_mm * 0.24, 16.0)
-            cy = frame.height_mm * 0.18
+            box_h = min((pmaxy - pminy) * 0.24, 16.0)
+            cy = pminy + (pmaxy - pminy) * 0.18
         try:
             letters, credit_lines, cap = text3d.underside_text(
                 credit_text,
-                centre_xy=(frame.width_mm / 2.0, cy),
+                centre_xy=((pminx + pmaxx) / 2.0, cy),
                 box_w=box_w,
                 box_h=box_h,
                 depth=cfg.credit_depth,
@@ -642,6 +722,8 @@ def build(cfg) -> Build:
         "merge_distance_mm": cfg.merge_distance_mm,
         "join_distance_m": cfg.join_distance_m,
         "route_only": cfg.route_only,
+        "shape": cfg.shape,
+        "caption_position": cfg.caption_position,
         "trail_entry": cfg.trail_entry,
         "n_map_parts": len(map_meshes),
         "dem_source": source,
@@ -711,6 +793,7 @@ def build(cfg) -> Build:
         Z_m=Z_m,
         path_mm=path,
         plinth_polys=plinth_polys,
+        plate_poly=plate_poly,
         band_mm=band,
         stats=stats,
         warnings=warnings,

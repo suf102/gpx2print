@@ -128,6 +128,33 @@ def drop_duplicates(track: Track, min_step_m: float = 1.0) -> Track:
     )
 
 
+def expand_frame(frame: Frame, w_mm: float, h_mm: float, size_mm: float) -> Frame:
+    """Widen the window to w_mm x h_mm of the current scale, then rescale.
+
+    A shape that is not a rectangle needs terrain out to the corners of its own
+    bounding box, not just the track's rectangle, or the plate would be cut off
+    where the grid runs out.
+    """
+    w_m = w_mm / frame.mm_per_m
+    h_m = h_mm / frame.mm_per_m
+    mm_per_m = size_mm / max(w_m, h_m)
+    half_lon = (w_m / frame.m_per_deg_lon) / 2
+    half_lat = (h_m / frame.m_per_deg_lat) / 2
+    return Frame(
+        lat0=frame.lat0,
+        lon0=frame.lon0,
+        m_per_deg_lon=frame.m_per_deg_lon,
+        m_per_deg_lat=frame.m_per_deg_lat,
+        mm_per_m=mm_per_m,
+        lon_min=frame.lon0 - half_lon,
+        lon_max=frame.lon0 + half_lon,
+        lat_min=frame.lat0 - half_lat,
+        lat_max=frame.lat0 + half_lat,
+        width_mm=w_m * mm_per_m,
+        height_mm=h_m * mm_per_m,
+    )
+
+
 def load_pieces(paths: list[str], min_step_m: float = 1.0):
     """Every contiguous run of points across every file, ready to be chained."""
     from pathlib import Path as _Path

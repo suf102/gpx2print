@@ -215,6 +215,20 @@ class App(tk.Tk):
                           "1 is true to life, which looks flat. 2–3 is dramatic.",
                           0.5, 8, 0.25)
 
+        self.shape_var = tk.StringVar(value="Rectangle")
+        line = ttk.Frame(g)
+        line.pack(fill="x", pady=(6, 0))
+        ttk.Label(line, text="Shape of the map").pack(side="left")
+        ttk.Combobox(
+            line, textvariable=self.shape_var, state="readonly", width=16,
+            values=["Rectangle", "Square", "Circle", "Triangle", "Pentagon",
+                    "Hexagon", "Octagon"],
+        ).pack(side="right")
+        ttk.Label(g, text="Anything but a rectangle is grown until the whole walk "
+                          "fits inside it, then scaled back to the size above.",
+                  foreground=HINT, font=("", 10), wraplength=390,
+                  justify="left").pack(anchor="w", pady=(0, 2))
+
         self.cap_on = tk.BooleanVar(value=True)
         ttk.Checkbutton(g, text="Add a caption along the bottom",
                         variable=self.cap_on, command=self._toggle_caption).pack(
@@ -224,6 +238,15 @@ class App(tk.Tk):
         self.cap_entry.pack(fill="x")
         ttk.Label(g, text="Name, date, distance — whatever you like.",
                   foreground=HINT, font=("", 10)).pack(anchor="w")
+
+        self.cap_pos_var = tk.StringVar(value="Along the bottom")
+        line = ttk.Frame(g)
+        line.pack(fill="x", pady=(6, 0))
+        ttk.Label(line, text="Caption strip").pack(side="left")
+        ttk.Combobox(
+            line, textvariable=self.cap_pos_var, state="readonly", width=16,
+            values=["Along the bottom", "Along the top"],
+        ).pack(side="right")
 
         self.cut_var = tk.StringVar(value="Engraved — cut into the surface")
         line = ttk.Frame(g)
@@ -519,6 +542,9 @@ class App(tk.Tk):
             trail_entry=("bottom" if self.entry_var.get().startswith("From under")
                          else "top"),
             caption=caption or None,
+            shape=self.shape_var.get().lower(),
+            caption_position=("top" if "top" in self.cap_pos_var.get().lower()
+                              else "bottom"),
             caption_style=(
                 "deboss" if self.cut_var.get().startswith("Engraved")
                 else "emboss"

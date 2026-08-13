@@ -93,7 +93,11 @@ each. If two days that should have joined didn't, raise *Join files closer than*
 - *Trail line width* — how thick the coloured route looks. 3 mm is a good start.
 - *Hill height boost* — real hills are surprisingly flat at this scale, so this
   stretches them upwards. 1 is true to life and looks dull; 2–3 looks like a mountain.
-- *Caption* — text along the bottom edge. A name and a date works nicely.
+- *Shape of the map* — rectangle, square, circle, triangle, pentagon, hexagon or
+  octagon. Whatever you choose is made big enough to hold the whole walk, then scaled
+  back to the size you asked for, so nothing is ever cut off.
+- *Caption* — text along the edge. A name and a date works nicely.
+- *Caption strip* — put it along the bottom or the top.
 - *Lettering* — **Engraved** cuts the text into the surface, **Raised** makes it stand
   out. Engraved usually prints more neatly, so it's the default. This also changes the
   distance scale and north arrow.
