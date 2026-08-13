@@ -246,7 +246,18 @@ def build(cfg) -> Build:
 
     # One Track covering everything, used for framing and terrain.
     track = _merged_track(sections)
-    frame = gpx_io.build_frame(track, cfg.size_mm, cfg.margin, cfg.square)
+
+    if cfg.scale_denominator:
+        # 1:N means a metre of ground becomes 1000/N mm on the model. Measure the
+        # ground the map has to cover, then ask for exactly that many millimetres.
+        probe = gpx_io.build_frame(track, 100.0, cfg.margin, cfg.square)
+        ground_m = max(probe.width_mm, probe.height_mm) / probe.mm_per_m
+        size_mm = ground_m * (1000.0 / cfg.scale_denominator)
+        frame = gpx_io.build_frame(track, size_mm, cfg.margin, cfg.square)
+        log(f"  scale 1:{cfg.scale_denominator:,.0f} -> plate "
+            f"{frame.width_mm:.0f} x {frame.height_mm:.0f} mm")
+    else:
+        frame = gpx_io.build_frame(track, cfg.size_mm, cfg.margin, cfg.square)
 
     # A shape that is not a rectangle has to grow until it swallows the whole
     # track rectangle, or it would crop the corners off the map and take part of
@@ -255,7 +266,10 @@ def build(cfg) -> Build:
     if cfg.shape != "rectangle":
         grown = shapes.outline(cfg.shape, frame.width_mm, frame.height_mm)
         gx0, gy0, gx1, gy1 = grown.bounds
-        frame = gpx_io.expand_frame(frame, gx1 - gx0, gy1 - gy0, cfg.size_mm)
+        # An explicit scale must survive the shape growing, so the plate gets
+        # bigger rather than the map being squeezed to fit.
+        target = None if cfg.scale_denominator else cfg.size_mm
+        frame = gpx_io.expand_frame(frame, gx1 - gx0, gy1 - gy0, target)
         log(f"  {cfg.shape} plate, {frame.width_mm:.0f} x {frame.height_mm:.0f} mm")
     ny, nx = _grid_shape(frame, cfg.grid)
     log(
@@ -285,14 +299,36 @@ def build(cfg) -> Build:
     )
 
     # ------------------------------------------------- elevation to model mm
+    # The height the relief is measured from. Normally the lowest ground in view
+    # sits on the base; the offset moves that reference up or down.
+    datum_m = z_min_m + cfg.altitude_offset_m
+    above_m = max(z_max_m - datum_m, 1e-6)
+    if cfg.altitude_offset_m:
+        log(f"  measuring height from {datum_m:.0f} m "
+            f"({cfg.altitude_offset_m:+.0f} m), leaving {above_m:.0f} m of relief")
+        if z_max_m - datum_m <= 0:
+            warnings.append(
+                f"--altitude-offset {cfg.altitude_offset_m:g} puts the reference "
+                f"at {datum_m:.0f} m, above the highest ground here "
+                f"({z_max_m:.0f} m), so the landscape comes out flat"
+            )
+        elif above_m < relief_m * 0.25:
+            warnings.append(
+                f"the altitude offset flattens most of the landscape: only "
+                f"{above_m:.0f} m of {relief_m:.0f} m is left above the reference"
+            )
+
     if cfg.max_relief_mm is not None:
         relief_mm = float(cfg.max_relief_mm)
-        z_gain = relief_mm / relief_m
+        z_gain = relief_mm / above_m
     else:
         z_gain = frame.mm_per_m * cfg.z_scale
-        relief_mm = relief_m * z_gain
+        relief_mm = above_m * z_gain
 
-    Z_mm = (Z_m - z_min_m) * z_gain + cfg.base_mm
+    Z_mm = (Z_m - datum_m) * z_gain + cfg.base_mm
+    # Ground below the reference flattens onto the base rather than punching
+    # through the bottom of the model.
+    Z_mm = np.maximum(Z_mm, cfg.base_mm)
 
     # X/Y of the terrain block, with the caption plinth added below it.
     x_1d = np.linspace(0.0, frame.width_mm, nx)
@@ -722,6 +758,9 @@ def build(cfg) -> Build:
         "merge_distance_mm": cfg.merge_distance_mm,
         "join_distance_m": cfg.join_distance_m,
         "route_only": cfg.route_only,
+        "altitude_datum_m": datum_m,
+        "altitude_offset_m": cfg.altitude_offset_m,
+        "scale_set_explicitly": cfg.scale_denominator is not None,
         "shape": cfg.shape,
         "caption_position": cfg.caption_position,
         "trail_entry": cfg.trail_entry,

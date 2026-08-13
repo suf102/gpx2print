@@ -128,7 +128,9 @@ def drop_duplicates(track: Track, min_step_m: float = 1.0) -> Track:
     )
 
 
-def expand_frame(frame: Frame, w_mm: float, h_mm: float, size_mm: float) -> Frame:
+def expand_frame(
+    frame: Frame, w_mm: float, h_mm: float, size_mm: float | None
+) -> Frame:
     """Widen the window to w_mm x h_mm of the current scale, then rescale.
 
     A shape that is not a rectangle needs terrain out to the corners of its own
@@ -137,7 +139,9 @@ def expand_frame(frame: Frame, w_mm: float, h_mm: float, size_mm: float) -> Fram
     """
     w_m = w_mm / frame.mm_per_m
     h_m = h_mm / frame.mm_per_m
-    mm_per_m = size_mm / max(w_m, h_m)
+    # With size_mm given, rescale so the finished plate measures that across. With
+    # it left out the scale is fixed, so the plate simply comes out bigger.
+    mm_per_m = frame.mm_per_m if size_mm is None else size_mm / max(w_m, h_m)
     half_lon = (w_m / frame.m_per_deg_lon) / 2
     half_lat = (h_m / frame.m_per_deg_lat) / 2
     return Frame(

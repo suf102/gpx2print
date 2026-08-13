@@ -30,6 +30,23 @@ class Config:
     size_mm: float = 150.0
     """Length of the longest horizontal edge of the map, in millimetres."""
 
+    scale_denominator: float | None = None
+    """Set the map scale directly, as the N in 1:N, instead of the size.
+
+    1:50000 means a metre of ground becomes 1/50 mm on the model. The plate then
+    comes out whatever size the route needs, and --size is ignored.
+    """
+
+    altitude_offset_m: float = 0.0
+    """Move the height the relief is measured from, in metres of real altitude.
+
+    By default the lowest ground in view sits on the base. A positive offset
+    raises that reference, so anything below it flattens onto the base — useful
+    for lifting a valley floor out of the way, or for giving several maps of
+    neighbouring areas the same vertical datum so they stand at matching heights.
+    A negative offset lowers it, lifting the whole landscape off the base.
+    """
+
     margin: float = 0.15
     """Terrain padding around the track, as a fraction of the track's bounding box."""
 
@@ -190,6 +207,8 @@ class Config:
             raise ValueError("--join-distance cannot be negative")
         if self.merge_distance_mm < 0:
             raise ValueError("--merge-distance cannot be negative")
+        if self.scale_denominator is not None and self.scale_denominator <= 0:
+            raise ValueError("--scale must be greater than zero")
         if self.size_mm <= 10:
             raise ValueError("--size must be greater than 10 mm")
         if self.trail_width < 0.4:

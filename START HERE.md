@@ -128,6 +128,10 @@ in there are worth knowing about:
   map is on the ground ("2 km", say). On by default.
 - *North arrow* — an arrow on the bottom strip showing which way is north. On by
   default.
+- *Scale 1:* — set the map scale rather than its size. Put 25000 for 1:25,000 and the
+  map comes out as big as it needs to be. Leave it at 0 to use the size instead.
+- *Altitude offset* — changes the height the hills are measured from. Handy if you are
+  printing two neighbouring walks and want them to stand at matching heights.
 - *Route only* — leaves out the landscape entirely. You get the route standing on a
   plain base as an elevation profile: the hills around it are gone, but the route still
   rises and falls with the real ground. The base keeps the caption, scale and arrow.

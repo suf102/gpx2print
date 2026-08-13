@@ -85,6 +85,8 @@ python -m gpx2print walk.gpx --dry-run --preview walk.png
 | Option | Default | What it does |
 | --- | --- | --- |
 | `--size MM` | 150 | Longest edge of the map. Everything else scales with it. |
+| `--scale N` | — | Set the scale instead: `50000` gives 1:50,000 and the plate comes out as big as it needs to. |
+| `--altitude-offset M` | 0 | Move the height the relief is measured from, in metres. |
 | `--join-distance M` | 200 | How close two ends must be to be joined into one path (ground metres). |
 | `--merge-distance MM` | 2.0 | Sections that cross or come this close on the print become one piece. |
 | `--trail-width MM` | 3.0 | **Width of the printed trail line.** |
@@ -209,6 +211,27 @@ An open route that stays inside the map leaves it in one piece, exactly as befor
 
 `--trail-base follow` is ignored here, since the route has to reach the bottom of the
 map to be pushed through it.
+
+### Setting the scale, or the datum
+
+```bash
+python -m gpx2print walk.gpx --scale 25000          # 1:25,000, size follows
+python -m gpx2print walk.gpx --altitude-offset 400  # measure relief from 400 m up
+```
+
+`--size` and `--scale` are two ways of saying the same thing from opposite ends: give a
+size and the scale falls out, or give a scale and the plate comes out as large as the
+route needs. `--size` is ignored when a scale is set. An explicit scale survives a
+non-rectangular `--shape` too — the plate grows rather than the map being squeezed.
+
+`--altitude-offset` moves the height the relief is measured from. By default the lowest
+ground in view sits on the base. A positive offset raises that reference and anything
+below it flattens onto the base; a negative one lowers it and lifts the whole landscape.
+
+It is most useful for **making several maps match**: give neighbouring areas the same
+scale and the same datum and they stand at consistent heights, so they read as one
+landscape rather than each being normalised to its own lowest point. It warns if the
+offset flattens most of the terrain.
 
 ### The shape of the plate
 

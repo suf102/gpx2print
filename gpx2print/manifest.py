@@ -55,7 +55,14 @@ def command_line(cfg, out_path: str, combined=False, stl=False,
     if layout != "separate":
         argv += ["--layout", layout]
 
+    if cfg.scale_denominator:
+        argv += ["--scale", f"{cfg.scale_denominator:g}"]
+    if cfg.altitude_offset_m:
+        argv += ["--altitude-offset", f"{cfg.altitude_offset_m:g}"]
     argv += [
+        "--shape", cfg.shape,
+        "--caption-position", cfg.caption_position,
+        "--trail-entry", cfg.trail_entry,
         "--size", f"{cfg.size_mm:g}",
         "--margin", f"{cfg.margin:g}",
         "--base", f"{cfg.base_mm:g}",
@@ -176,7 +183,15 @@ def render(b, cfg, written: list[str], out_path: str, combined=False, stl=False,
     add(_rule("SETTINGS"))
     add("")
     rows = [
-        ("Overall size", f"{cfg.size_mm:g} mm along the longest edge"),
+        ("Overall size",
+         f"set by scale, 1:{cfg.scale_denominator:,.0f}"
+         if cfg.scale_denominator else f"{cfg.size_mm:g} mm along the longest edge"),
+        ("Plate shape", cfg.shape),
+        ("Caption strip", f"along the {cfg.caption_position}"),
+        ("Route fitted", f"from the {cfg.trail_entry}"),
+        ("Altitude measured from",
+         f"{cfg.altitude_offset_m:+g} m relative to the lowest ground"
+         if cfg.altitude_offset_m else "the lowest ground in view"),
         ("Land around the route", f"{cfg.margin:g} of the track's extent"),
         ("Square footprint", "yes" if cfg.square else "no"),
         ("Route only, no landscape", "yes" if cfg.route_only else "no"),

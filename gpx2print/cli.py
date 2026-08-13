@@ -67,6 +67,16 @@ def build_parser() -> argparse.ArgumentParser:
     g = p.add_argument_group("size and shape")
     g.add_argument("--size", type=float, default=d.size_mm,
                    help=f"longest edge of the map in mm (default: {d.size_mm:g})")
+    g.add_argument("--scale", type=float, default=None, metavar="N",
+                   help="set the map scale as the N in 1:N, e.g. 50000 for "
+                        "1:50,000. The plate then comes out whatever size the "
+                        "route needs and --size is ignored")
+    g.add_argument("--altitude-offset", type=float, default=d.altitude_offset_m,
+                   metavar="M",
+                   help=f"move the altitude the relief is measured from, in "
+                        f"metres. Positive flattens ground below it onto the "
+                        f"base; negative lifts the whole landscape "
+                        f"(default: {d.altitude_offset_m:g})")
     g.add_argument("--join-distance", type=float, default=d.join_distance_m,
                    metavar="M",
                    help=f"how close two ends must be to be joined into one path, "
@@ -210,6 +220,8 @@ def args_to_config(a) -> Config:
         join_distance_m=a.join_distance,
         merge_distance_mm=a.merge_distance,
         size_mm=a.size,
+        scale_denominator=a.scale,
+        altitude_offset_m=a.altitude_offset,
         margin=a.margin,
         shape=a.shape,
         caption_position=a.caption_position,

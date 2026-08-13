@@ -349,6 +349,15 @@ class App(tk.Tk):
                           "Higher is finer but slower. 150–400 is sensible.",
                           60, 700, 20, "%.0f")
 
+        self.scale = Row(g, "Scale 1 : (0 = use size)", 0,
+                         "Set the map scale instead of the size. 25000 gives "
+                         "1:25,000 and the plate comes out as big as it needs to.",
+                         0, 2000000, 5000, "%.0f", width=9)
+        self.alt = Row(g, "Altitude offset (m)", 0,
+                       "Moves the height the relief is measured from. Positive "
+                       "flattens low ground; useful for matching neighbouring maps.",
+                       -3000, 6000, 50, "%.0f", width=9)
+
         self.join = Row(g, "Join files closer than (m)", 200,
                         "Ends nearer than this become one continuous path.",
                         0, 5000, 25, "%.0f")
@@ -526,6 +535,8 @@ class App(tk.Tk):
         return Config(
             gpx_paths=list(self.gpx_files),
             join_distance_m=self.join.get(),
+            scale_denominator=(self.scale.get() or None),
+            altitude_offset_m=self.alt.get(),
             merge_distance_mm=self.merge.get(),
             out_path=str(Path(self.out_var.get()) / f"{self._stem()}.3mf"),
             size_mm=self.size.get(),
