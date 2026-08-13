@@ -12,6 +12,7 @@ Double-click the one for your computer:
 | --- | --- |
 | Mac | **Start Map Maker (Mac).command** |
 | Windows | **Start Map Maker (Windows).bat** |
+| Linux | **Start Map Maker (Linux).sh** |
 
 A black text window appears first — that's normal, ignore it. The map maker window
 opens a moment later.
@@ -25,6 +26,12 @@ opens a moment later.
   the file, choose *Open*, then click *Open* in the box that appears. Only needed once.
 - *Windows — a blue "Windows protected your PC" box*: click *More info*, then
   *Run anyway*. Only needed once.
+- *Linux — double-clicking opens it in a text editor*: your file manager needs
+  permission first. Right-click the file, open *Properties*, and tick *Allow executing
+  file as program*. Or run it from a terminal: `./"Start Map Maker (Linux).sh"`
+- *Linux — it says the graphical toolkit is missing*: tkinter is a separate package on
+  most distributions. The launcher prints the exact command for yours, usually
+  `sudo apt install python3-tk python3-venv` or `sudo dnf install python3-tkinter`.
 - *Either — it says Python isn't installed*: get it from
   [python.org/downloads](https://www.python.org/downloads/). **On Windows, tick "Add
   python.exe to PATH" on the first screen of the installer**, or the launcher won't
