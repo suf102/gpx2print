@@ -27,7 +27,13 @@ Double-click the launcher for your computer — **`Start Map Maker (Mac).command
 with file pickers and plain English settings. Each one finds Python, installs what it
 needs on first run, and opens the window. See **`START HERE.md`** for a walkthrough.
 
-On Linux the launcher also handles the two things that differ there: `tkinter` ships as
+On Linux, if the launcher opens in a text editor rather than running, it has lost its
+executable flag — downloading a single file from the web, or unpacking the zip with some
+archive managers, strips it. `bash "Start Map Maker (Linux).sh"` works regardless, and
+the file's own header explains the permanent fix. The **.tar.gz** download preserves the
+flag more reliably than the .zip.
+
+Otherwise the launcher handles the two things that differ on Linux: `tkinter` ships as
 a separate package on most distributions, and distributions that mark their Python
 "externally managed" refuse a plain `pip install`, so it falls back to a private
 `.venv` inside the project folder. Or launch it yourself:

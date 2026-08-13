@@ -1,11 +1,29 @@
 #!/usr/bin/env bash
-# Double-click this file to open the map maker, or run it from a terminal with
-#   ./"Start Map Maker (Linux).sh"
 #
-# Most Linux file managers will not run a script on double-click until you allow
-# it: right-click the file, open Properties, and tick something like
-# "Allow executing file as program" (GNOME Files also has
-# Preferences > Behaviour > Executable text files > Run them).
+# ============================================================================
+#  READING THIS IN A TEXT EDITOR? Then it opened instead of running. Here's why
+#  and how to fix it — you have not done anything wrong.
+#
+#  THE QUICK WAY THAT ALWAYS WORKS
+#    Right-click the folder this file is in, choose "Open in Terminal", then
+#    type this and press return:
+#
+#        bash "Start Map Maker (Linux).sh"
+#
+#    That needs no permissions and no settings changed.
+#
+#  TO MAKE DOUBLE-CLICKING WORK INSTEAD
+#    1. Right-click this file, choose Properties, open the Permissions tab and
+#       tick "Allow executing file as program" (KDE calls it "Is executable").
+#    2. On GNOME that is not enough by itself. Either right-click the file and
+#       choose "Run as a Program", or open Files, go to
+#       Preferences > General > Executable Text Files, and pick "Run them".
+#
+#  WHY IT HAPPENS
+#    Downloading a single file from a website, or unpacking the zip with some
+#    archive managers, drops the "may be run" flag. Using the .tar.gz instead
+#    of the .zip usually keeps it.
+# ============================================================================
 
 cd "$(dirname "$0")" || exit 1
 
@@ -43,20 +61,59 @@ venv_hint() {
 # ---- find a Python we can actually use ---------------------------------------
 # Existing is not enough: Debian 11 and RHEL 8 still ship Python 3.9, which is too
 # old for this program. Each candidate has to run AND be new enough.
+is_conda() {
+    "$1" -c 'import os,sys;raise SystemExit(0 if os.path.exists(os.path.join(sys.prefix,"conda-meta")) else 1)' \
+        >/dev/null 2>&1
+}
+
 PY=""
 NEWEST=""
+NO_TK=""
 for candidate in "$VENV/bin/python" python3 python3.13 python3.12 python3.11 \
-                 python3.10 python; do
+                 python3.10 python /usr/bin/python3 /usr/bin/python3.13 \
+                 /usr/bin/python3.12 /usr/bin/python3.11 /usr/bin/python3.10; do
     command -v "$candidate" >/dev/null 2>&1 || continue
     v=$("$candidate" -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>/dev/null) || continue
     [ -z "$v" ] && continue
     [ -z "$NEWEST" ] && NEWEST="$v"
-    if "$candidate" -c 'import sys;raise SystemExit(0 if sys.version_info>=(3,10) else 1)' \
-        >/dev/null 2>&1; then
+    "$candidate" -c 'import sys;raise SystemExit(0 if sys.version_info>=(3,10) else 1)' \
+        >/dev/null 2>&1 || continue
+    # It must also be able to open a window. Checking this while choosing, rather
+    # than after, matters: a conda Python usually has no tkinter, and no amount of
+    # "apt install python3-tk" will give it one, because that installs tkinter for
+    # the system Python instead. Skipping past it finds one that already works.
+    if "$candidate" -c 'import tkinter' >/dev/null 2>&1; then
         PY="$candidate"
         break
     fi
+    [ -z "$NO_TK" ] && NO_TK="$candidate"
 done
+
+if [ -z "$PY" ] && [ -n "$NO_TK" ]; then
+    echo "Python is installed, but it cannot open a window: it has no tkinter."
+    echo
+    if is_conda "$NO_TK"; then
+        echo "The Python in use is from Anaconda/conda ($NO_TK), and apt or dnf"
+        echo "cannot add tkinter to it — those install it for the system Python,"
+        echo "which is a different program. Do one of these instead:"
+        echo
+        echo "    conda install -y tk        (add it to this environment)"
+        echo
+        echo "or step out of conda and use the system Python:"
+        echo
+        echo "    conda deactivate"
+        echo
+        echo "then run this file again."
+    else
+        echo "On most distributions tkinter ships as its own package:"
+        echo "    $(tk_hint)"
+        echo
+        echo "Then run this file again."
+    fi
+    echo
+    read -r -p "Press return to close. "
+    exit 1
+fi
 
 if [ -z "$PY" ]; then
     if [ -n "$NEWEST" ]; then
@@ -70,20 +127,6 @@ if [ -z "$PY" ]; then
         echo "Install it with your package manager, for example:"
         echo "    sudo apt install python3 python3-tk python3-venv"
     fi
-    echo
-    read -r -p "Press return to close. "
-    exit 1
-fi
-
-# ---- tkinter is a separate package on most distributions ---------------------
-if ! "$PY" -c "import tkinter" >/dev/null 2>&1; then
-    echo "Python is installed, but the graphical toolkit it needs is not."
-    echo "On most distributions tkinter ships as its own package."
-    echo
-    echo "Install it with:"
-    echo "    $(tk_hint)"
-    echo
-    echo "Then run this file again."
     echo
     read -r -p "Press return to close. "
     exit 1

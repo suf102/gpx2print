@@ -26,12 +26,27 @@ opens a moment later.
   the file, choose *Open*, then click *Open* in the box that appears. Only needed once.
 - *Windows — a blue "Windows protected your PC" box*: click *More info*, then
   *Run anyway*. Only needed once.
-- *Linux — double-clicking opens it in a text editor*: your file manager needs
-  permission first. Right-click the file, open *Properties*, and tick *Allow executing
-  file as program*. Or run it from a terminal: `./"Start Map Maker (Linux).sh"`
-- *Linux — it says the graphical toolkit is missing*: tkinter is a separate package on
-  most distributions. The launcher prints the exact command for yours, usually
-  `sudo apt install python3-tk python3-venv` or `sudo dnf install python3-tkinter`.
+- *Linux — it opens in a text editor instead of running*: the file has lost its
+  "may be run" flag, which happens when you download a single file from a website or
+  unpack the zip with certain archive managers. **The quickest fix needs no settings
+  changed at all**: right-click the folder, choose *Open in Terminal*, and type
+
+      bash "Start Map Maker (Linux).sh"
+
+  To make double-clicking work instead, right-click the file → *Properties* →
+  *Permissions* → tick *Allow executing file as program* (KDE: *Is executable*). On
+  GNOME that alone still isn't enough — also right-click and choose *Run as a Program*,
+  or set Files → *Preferences* → *Executable Text Files* → *Run them*. Downloading the
+  **.tar.gz** rather than the .zip usually keeps the flag intact.
+- *It says the graphical toolkit is missing*: tkinter is a separate package on most
+  Linux distributions, and the launcher prints the exact command for yours — usually
+  `sudo apt install python3-tk`.
+
+  **If you use Anaconda or conda** (your terminal prompt starts with `(base)`), that
+  command will not help: it installs tkinter for the *system* Python, while conda's
+  Python is a different program entirely, so the same message keeps coming back however
+  many times you install it. Use `conda install -y tk` instead, or `conda deactivate`
+  to step out of conda. The launcher now spots this and tells you which one you need.
 - *Either — it says your Python is too old*: it needs 3.10 or newer, and Macs and some
   Linux distributions still ship an older one. Install a current version and run the
   launcher again — it will find the new one on its own.
