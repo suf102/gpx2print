@@ -21,6 +21,34 @@ def _hillshade(Z, dx, dy, azimuth=315.0, altitude=45.0, exaggeration=2.0):
     return np.clip(shade, 0, 1)
 
 
+def _poly_path(geom):
+    """Matplotlib path for shapely polygons, holes included.
+
+    Drawing only the outer ring turns a route that loops back on itself into a
+    filled blob, because the hole in the middle of the loop is what makes it read
+    as a loop at all.
+    """
+    from matplotlib.path import Path as MPath
+    from shapely.geometry import Polygon
+    from shapely.geometry.polygon import orient
+
+    verts, codes = [], []
+    for g in getattr(geom, "geoms", [geom]):
+        if not isinstance(g, Polygon) or g.is_empty:
+            continue
+        # Outer ring anticlockwise, holes clockwise, so the fill rule cuts them out.
+        g = orient(g, sign=1.0)
+        for ring in [g.exterior, *g.interiors]:
+            c = np.asarray(ring.coords)
+            if len(c) < 3:
+                continue
+            verts.extend(c)
+            codes.extend(
+                [MPath.MOVETO] + [MPath.LINETO] * (len(c) - 2) + [MPath.CLOSEPOLY]
+            )
+    return MPath(verts, codes) if verts else None
+
+
 def _terrain_colors(Z_m):
     from matplotlib.colors import LinearSegmentedColormap
 
@@ -149,23 +177,22 @@ def render(build, cfg, path: str, dpi: int = 170) -> str:
                   colors="#3a3a3a")
 
     # each section at its true channel width, in the colour it will print
-    from shapely.geometry import MultiPolygon, Polygon
+    from matplotlib.patches import PathPatch
 
     from .export import trail_colors
 
     # One colour per printable piece, drawn from the merged footprint so the
-    # preview shows exactly what the part will be, bridges included.
+    # preview shows exactly what the part will be, bridges and holes included.
     parts = b.parts or []
     colors = trail_colors(cfg.trail_color, max(len(parts), 1))
 
     for part, col in zip(parts, colors):
-        poly = part.polygon
-        geoms = list(poly.geoms) if isinstance(poly, MultiPolygon) else [poly]
-        for g in geoms:
-            if not isinstance(g, Polygon) or g.is_empty:
-                continue
-            xy = np.asarray(g.exterior.coords)
-            ax.fill(xy[:, 0], xy[:, 1], color=col, zorder=4, ec="#00000055", lw=0.4)
+        outline = _poly_path(part.polygon)
+        if outline is not None:
+            ax.add_patch(
+                PathPatch(outline, facecolor=col, edgecolor="#00000055",
+                          lw=0.4, zorder=4)
+            )
 
     # start and finish of every section
     for sec in (b.sections or []):
@@ -186,31 +213,15 @@ def render(build, cfg, path: str, dpi: int = 170) -> str:
         # Draw the very polygons the model is built from, so the preview cannot
         # drift out of step with what actually prints.
         if b.plinth_polys is not None:
-            from matplotlib.patches import PathPatch
-            from matplotlib.path import Path as MPath
-
-            geoms = getattr(b.plinth_polys, "geoms", [b.plinth_polys])
-            for g in geoms:
-                if g.is_empty:
-                    continue
-                verts, codes = [], []
-                for ring in [g.exterior, *g.interiors]:
-                    c = np.asarray(ring.coords)
-                    if len(c) < 3:
-                        continue
-                    verts.extend(c)
-                    codes.extend(
-                        [MPath.MOVETO]
-                        + [MPath.LINETO] * (len(c) - 2)
-                        + [MPath.CLOSEPOLY]
-                    )
-                if verts:
+            for g in getattr(b.plinth_polys, "geoms", [b.plinth_polys]):
+                outline = _poly_path(g)
+                if outline is not None:
                     # Engraved lettering is drawn as a recess, raised as solid ink,
                     # so the preview reads the same way the print will.
                     cut = cfg.caption_style == "deboss"
                     ax.add_patch(
                         PathPatch(
-                            MPath(verts, codes),
+                            outline,
                             facecolor="#cfc8ba" if cut else INK,
                             edgecolor="#8d8676" if cut else "none",
                             lw=0.5 if cut else 0,
