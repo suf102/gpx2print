@@ -283,14 +283,27 @@ def render(build, cfg, path: str, dpi: int = 170) -> str:
 
     if band > 0:
         sy = pmaxy if on_top else pminy - band
-        ax.add_patch(
-            Rectangle((pminx, sy), pmaxx - pminx, band,
-                      facecolor="#e8e3d9", ec="none", zorder=7)
-        )
-        ax.add_patch(
-            Rectangle((pminx, sy), pmaxx - pminx, band,
-                      fill=False, ec=INK, lw=1.4, zorder=12)
-        )
+        # When the strip is a part of its own it is drawn as the shape it really
+        # is, tongues and all, so it is plain where it parts from the map.
+        loose = getattr(b, "strip_poly", None)
+        if loose is not None:
+            from shapely.ops import unary_union as _union
+
+            edge = _poly_path(_union([loose, *getattr(b, "strip_tabs", [])]))
+        else:
+            edge = None
+        if edge is not None:
+            ax.add_patch(PathPatch(edge, facecolor="#e8e3d9", ec="none", zorder=7))
+            ax.add_patch(PathPatch(edge, fill=False, ec=INK, lw=1.4, zorder=12))
+        else:
+            ax.add_patch(
+                Rectangle((pminx, sy), pmaxx - pminx, band,
+                          facecolor="#e8e3d9", ec="none", zorder=7)
+            )
+            ax.add_patch(
+                Rectangle((pminx, sy), pmaxx - pminx, band,
+                          fill=False, ec=INK, lw=1.4, zorder=12)
+            )
         # Draw the very polygons the model is built from, so the preview cannot
         # drift out of step with what actually prints.
         if b.plinth_polys is not None:
@@ -320,10 +333,10 @@ def render(build, cfg, path: str, dpi: int = 170) -> str:
     ax.set_yticks([])
     for s in ax.spines.values():
         s.set_visible(False)
-    seams = ""
+    seams = "   ·   strip prints separately" if st.get("separate_strip") else ""
     if len(tiles) > 1:
         tw, th = st["tile_size_mm"]
-        seams = (f"   ·   in {len(tiles)} {st['shape']}s, "
+        seams += (f"   ·   in {len(tiles)} {st['shape']}s, "
                  f"largest {tw:.0f} × {th:.0f} mm")
     ax.set_title(
         f"printed footprint  {pmaxx - pminx:.0f} × {pmaxy - pminy + band:.0f} mm"

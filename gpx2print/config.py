@@ -90,6 +90,15 @@ class Config:
     is a cluster of them rather than one big hexagon.
     """
 
+    separate_strip: bool = False
+    """Print the caption strip as its own part rather than joined to the map.
+
+    The strip carries the caption, the scale bar and the north arrow, so making
+    it separate is how you get those in a second colour. It parts company along
+    the map's own outline and is held on by tongues that press into matching
+    slots, with the same clearance as the trail fit.
+    """
+
     caption_position: str = "bottom"
     """Which side of the plate the caption strip is attached to: bottom or top."""
 

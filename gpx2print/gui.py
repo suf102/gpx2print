@@ -21,7 +21,39 @@ from .config import Config
 
 PAD = 10
 HINT = "#6b7280"
+MUTED = "#adb2ba"
 ACCENT = "#B4472B"
+
+
+class Field:
+    """A control and the words belonging to it, switched on and off together.
+
+    Greying a setting out is a claim about the print, not decoration: it says
+    this one cannot change anything from here. Leaving the label black beside a
+    dead box reads as a fault in the program, so the words go grey with it.
+    """
+
+    def __init__(self, *widgets):
+        # Remember how each label was meant to look, so turning it back on
+        # restores the colour it had rather than a guess at it.
+        self.widgets = [
+            (w, str(w.cget("foreground")) if isinstance(w, ttk.Label) else None)
+            for w in widgets
+        ]
+        self.on = True
+
+    def enable(self, on: bool):
+        on = bool(on)
+        if on == self.on:
+            return
+        self.on = on
+        for w, tone in self.widgets:
+            if isinstance(w, ttk.Label):
+                w.configure(foreground=tone if on else MUTED)
+            elif isinstance(w, ttk.Combobox):
+                w.configure(state="readonly" if on else "disabled")
+            else:
+                w.configure(state="normal" if on else "disabled")
 
 
 class Row:
@@ -31,7 +63,8 @@ class Row:
         self.var = tk.DoubleVar(value=value)
         line = ttk.Frame(parent)
         line.pack(fill="x", pady=(6, 0))
-        ttk.Label(line, text=label).pack(side="left")
+        self.label = ttk.Label(line, text=label)
+        self.label.pack(side="left")
         self.spin = ttk.Spinbox(
             line,
             from_=frm,
@@ -42,9 +75,12 @@ class Row:
             format=fmt,
         )
         self.spin.pack(side="right")
-        ttk.Label(parent, text=hint, foreground=HINT, font=("", 10)).pack(
-            anchor="w", pady=(0, 2)
-        )
+        self.hint = ttk.Label(parent, text=hint, foreground=HINT, font=("", 10))
+        self.hint.pack(anchor="w", pady=(0, 2))
+        self.field = Field(self.label, self.spin, self.hint)
+
+    def enable(self, on: bool):
+        self.field.enable(on)
 
     def get(self) -> float:
         return float(self.var.get())
@@ -70,6 +106,7 @@ class App(tk.Tk):
         style.configure("Go.TButton", font=("", 13, "bold"))
 
         self._build_ui()
+        self._refresh()
         self.after(80, self._pump)
 
     # ------------------------------------------------------------------ layout
@@ -192,26 +229,35 @@ class App(tk.Tk):
         ).pack(anchor="w", pady=(2, 0))
 
         ttk.Separator(g).pack(fill="x", pady=(9, 5))
-        ttk.Label(g, text="…or no walk at all: just a place",
-                  foreground=HINT, font=("", 10, "bold")).pack(anchor="w")
+        self.at_head = ttk.Label(g, text="…or no walk at all: just a place",
+                                 foreground=HINT, font=("", 10, "bold"))
+        self.at_head.pack(anchor="w")
         line = ttk.Frame(g)
         line.pack(fill="x", pady=(3, 0))
-        ttk.Label(line, text="Coordinate").pack(side="left")
+        at_lab = ttk.Label(line, text="Coordinate")
+        at_lab.pack(side="left")
         self.at_var = tk.StringVar(value="")
-        ttk.Entry(line, textvariable=self.at_var, width=22).pack(side="right")
+        self.at_var.trace_add("write", lambda *_: self._refresh())
+        at_box = ttk.Entry(line, textvariable=self.at_var, width=22)
+        at_box.pack(side="right")
         line = ttk.Frame(g)
         line.pack(fill="x", pady=(4, 0))
-        ttk.Label(line, text="Ground covered (km)").pack(side="left")
+        across_lab = ttk.Label(line, text="Ground covered (km)")
+        across_lab.pack(side="left")
         self.across_var = tk.DoubleVar(value=5.0)
-        ttk.Spinbox(line, from_=0.2, to=200, increment=1, width=7,
-                    textvariable=self.across_var, format="%.1f").pack(side="right")
-        ttk.Label(
+        across_box = ttk.Spinbox(line, from_=0.2, to=200, increment=1, width=7,
+                                 textvariable=self.across_var, format="%.1f")
+        across_box.pack(side="right")
+        at_hint = ttk.Label(
             g,
             text="Type a latitude and longitude, like 56.7969,-5.0037, to print the "
                  "landscape around a place with no route on it. Leave it blank if "
                  "you chose files above.",
             foreground=HINT, font=("", 10), wraplength=390, justify="left",
-        ).pack(anchor="w", pady=(2, 0))
+        )
+        at_hint.pack(anchor="w", pady=(2, 0))
+        self.f_at = Field(self.at_head, at_lab, at_box, at_hint)
+        self.f_across = Field(across_lab, across_box)
 
         self.out_var = tk.StringVar(value=str(Path.home() / "Desktop"))
         line = ttk.Frame(g)
@@ -238,6 +284,7 @@ class App(tk.Tk):
                           0.5, 8, 0.25)
 
         self.shape_var = tk.StringVar(value="Rectangle")
+        self.shape_var.trace_add("write", lambda *_: self._refresh())
         line = ttk.Frame(g)
         line.pack(fill="x", pady=(6, 0))
         ttk.Label(line, text="Shape of the map").pack(side="left")
@@ -253,41 +300,51 @@ class App(tk.Tk):
 
         line = ttk.Frame(g)
         line.pack(fill="x", pady=(6, 0))
-        ttk.Label(line, text="Split into pieces").pack(side="left")
+        tiles_lab = ttk.Label(line, text="Split into pieces")
+        tiles_lab.pack(side="left")
         self.tiles_var = tk.IntVar(value=1)
-        ttk.Spinbox(line, from_=1, to=64, increment=1, width=7,
-                    textvariable=self.tiles_var, format="%.0f").pack(side="right")
-        ttk.Label(
+        self.tiles_var.trace_add("write", lambda *_: self._refresh())
+        tiles_box = ttk.Spinbox(line, from_=1, to=64, increment=1, width=7,
+                                textvariable=self.tiles_var, format="%.0f")
+        tiles_box.pack(side="right")
+        tiles_hint = ttk.Label(
             g,
             text="Leave at 1 for one whole map. Higher cuts it into that many "
                  "smaller copies of the same shape, which fit back together like "
                  "tiles — for a map too big for your printer. Squares, triangles "
                  "and hexagons only.",
             foreground=HINT, font=("", 10), wraplength=390, justify="left",
-        ).pack(anchor="w", pady=(0, 2))
+        )
+        tiles_hint.pack(anchor="w", pady=(0, 2))
+        self.f_tiles = Field(tiles_lab, tiles_box, tiles_hint)
 
         self.layout_var = tk.StringVar(value="Keep the map's shape")
         line = ttk.Frame(g)
         line.pack(fill="x", pady=(6, 0))
-        ttk.Label(line, text="Pieces make").pack(side="left")
-        ttk.Combobox(
+        lay_lab = ttk.Label(line, text="Pieces make")
+        lay_lab.pack(side="left")
+        lay_box = ttk.Combobox(
             line, textvariable=self.layout_var, state="readonly", width=22,
             values=["Keep the map's shape", "Exactly this many pieces"],
-        ).pack(side="right")
-        ttk.Label(
+        )
+        lay_box.pack(side="right")
+        lay_hint = ttk.Label(
             g,
             text="Keeping the shape means the map is still a hexagon, but a "
                  "hexagon only cuts into 7, 13 or 19 — so you get the nearest. "
                  "Choose exactly instead and you get the number you asked for, "
                  "with the map's outline being whatever those tiles add up to.",
             foreground=HINT, font=("", 10), wraplength=390, justify="left",
-        ).pack(anchor="w", pady=(0, 2))
+        )
+        lay_hint.pack(anchor="w", pady=(0, 2))
+        self.f_layout = Field(lay_lab, lay_box, lay_hint)
 
         self.cap_on = tk.BooleanVar(value=True)
         ttk.Checkbutton(g, text="Add a caption along the bottom",
                         variable=self.cap_on, command=self._toggle_caption).pack(
             anchor="w", pady=(8, 2))
         self.cap_var = tk.StringVar(value="")
+        self.cap_var.trace_add("write", lambda *_: self._refresh())
         self.cap_entry = ttk.Entry(g, textvariable=self.cap_var)
         self.cap_entry.pack(fill="x")
         ttk.Label(g, text="Name, date, distance — whatever you like.",
@@ -296,16 +353,37 @@ class App(tk.Tk):
         self.cap_pos_var = tk.StringVar(value="Along the bottom")
         line = ttk.Frame(g)
         line.pack(fill="x", pady=(6, 0))
-        ttk.Label(line, text="Caption strip").pack(side="left")
-        ttk.Combobox(
+        pos_lab = ttk.Label(line, text="Caption strip")
+        pos_lab.pack(side="left")
+        pos_box = ttk.Combobox(
             line, textvariable=self.cap_pos_var, state="readonly", width=16,
             values=["Along the bottom", "Along the top"],
-        ).pack(side="right")
+        )
+        pos_box.pack(side="right")
+        self.f_cap_pos = Field(pos_lab, pos_box)
+
+        self.strip_var = tk.BooleanVar(value=False)
+        self.strip_box = ttk.Checkbutton(
+            g, text="Print the strip as a separate piece",
+            variable=self.strip_var, command=self._refresh,
+        )
+        self.strip_box.pack(anchor="w", pady=(8, 0))
+        strip_hint = ttk.Label(
+            g,
+            text="The strip carries the caption, the distance scale and the north "
+                 "arrow, so printing it on its own is how you get those in a second "
+                 "colour. It comes off along the map's own edge and pushes back on "
+                 "with tongues, at whatever fit you chose below.",
+            foreground=HINT, font=("", 10), wraplength=390, justify="left",
+        )
+        strip_hint.pack(anchor="w", pady=(0, 2))
+        self.f_strip = Field(self.strip_box, strip_hint)
 
         self.cut_var = tk.StringVar(value="Engraved — cut into the surface")
         line = ttk.Frame(g)
         line.pack(fill="x", pady=(6, 0))
-        ttk.Label(line, text="Lettering").pack(side="left")
+        cut_lab = ttk.Label(line, text="Lettering")
+        cut_lab.pack(side="left")
         self.cut_box = ttk.Combobox(
             line, textvariable=self.cut_var, state="readonly", width=30,
             values=[
@@ -314,18 +392,22 @@ class App(tk.Tk):
             ],
         )
         self.cut_box.pack(side="right")
-        ttk.Label(
+        cut_hint = ttk.Label(
             g,
             text="Engraved usually prints more cleanly: the nozzle can smear small "
                  "raised letters. This also applies to the scale and north arrow.",
             foreground=HINT, font=("", 10), wraplength=390, justify="left",
-        ).pack(anchor="w", pady=(0, 2))
+        )
+        cut_hint.pack(anchor="w", pady=(0, 2))
+        self.f_cut = Field(cut_lab, self.cut_box, cut_hint)
 
     def _section_fit(self, parent):
-        g = self._group(parent, "3.  How the two parts fit")
+        self.fit_group = self._group(parent, "3.  How the two parts fit")
+        g = self.fit_group
 
         self.fit_var = tk.StringVar(value="Normal — most FDM printers (0.30 mm)")
-        ttk.Label(g, text="Fit between the trail and its slot").pack(anchor="w")
+        fit_lab = ttk.Label(g, text="Fit between the trail and its slot")
+        fit_lab.pack(anchor="w")
         self.fit_box = ttk.Combobox(
             g, textvariable=self.fit_var, state="readonly",
             values=[
@@ -342,41 +424,51 @@ class App(tk.Tk):
             ],
         )
         self.fit_box.pack(fill="x", pady=(2, 0))
-        ttk.Label(
+        fit_hint = ttk.Label(
             g,
             text="Too tight to push in? Pick the next one down the list. Rattles "
                  "about? Pick the one above. First layers bulge slightly on most "
                  "printers, so the slot is always a little tighter than the number.",
             foreground=HINT, font=("", 10), wraplength=390, justify="left",
-        ).pack(anchor="w", pady=(0, 4))
+        )
+        fit_hint.pack(anchor="w", pady=(0, 4))
+        self.f_fit = Field(fit_lab, self.fit_box, fit_hint)
 
         self.entry_var = tk.StringVar(value="From above — drops into a groove")
-        ttk.Label(g, text="Which way the route goes in").pack(anchor="w", pady=(6, 0))
-        ttk.Combobox(
+        self.entry_var.trace_add("write", lambda *_: self._refresh())
+        entry_lab = ttk.Label(g, text="Which way the route goes in")
+        entry_lab.pack(anchor="w", pady=(6, 0))
+        entry_box = ttk.Combobox(
             g, textvariable=self.entry_var, state="readonly",
             values=[
                 "From above — drops into a groove",
                 "From underneath — pushed up through the map",
             ],
-        ).pack(fill="x", pady=(2, 0))
-        ttk.Label(
+        )
+        entry_box.pack(fill="x", pady=(2, 0))
+        entry_hint = ttk.Label(
             g,
             text="From underneath, the slot goes right through, so the route "
                  "finishes flush with the back. A walk that returns to where it "
                  "started then cuts the middle free and the map arrives in two "
                  "pieces — the route locks them together.",
             foreground=HINT, font=("", 10), wraplength=390, justify="left",
-        ).pack(anchor="w", pady=(0, 4))
+        )
+        entry_hint.pack(anchor="w", pady=(0, 4))
+        self.f_entry = Field(entry_lab, entry_box, entry_hint)
 
         self.style_var = tk.StringVar(value="Flat bottom — no supports needed")
-        ttk.Label(g, text="Trail piece shape").pack(anchor="w", pady=(6, 0))
-        ttk.Combobox(
+        style_lab = ttk.Label(g, text="Trail piece shape")
+        style_lab.pack(anchor="w", pady=(6, 0))
+        style_box = ttk.Combobox(
             g, textvariable=self.style_var, state="readonly",
             values=[
                 "Flat bottom — no supports needed",
                 "Follows the ground — smaller, needs supports",
             ],
-        ).pack(fill="x", pady=(2, 0))
+        )
+        style_box.pack(fill="x", pady=(2, 0))
+        self.f_style = Field(style_lab, style_box)
 
     def _section_advanced(self, parent):
         self.adv_open = tk.BooleanVar(value=False)
@@ -407,6 +499,9 @@ class App(tk.Tk):
                          "Set the map scale instead of the size. 25000 gives "
                          "1:25,000 and the plate comes out as big as it needs to.",
                          0, 2000000, 5000, "%.0f", width=9)
+        # Setting a scale takes over from the map size, so the size box has to
+        # know when it stops meaning anything.
+        self.scale.var.trace_add("write", lambda *_: self._refresh())
         self.alt = Row(g, "Altitude offset (m)", 0,
                        "Moves the height the relief is measured from. Positive "
                        "flattens low ground; useful for matching neighbouring maps.",
@@ -422,9 +517,11 @@ class App(tk.Tk):
         ttk.Separator(g).pack(fill="x", pady=(10, 6))
 
         self.scale_var = tk.BooleanVar(value=True)
+        self.scale_var.trace_add("write", lambda *_: self._refresh())
         ttk.Checkbutton(g, text="Distance scale on the bottom strip",
                         variable=self.scale_var).pack(anchor="w")
         self.north_var = tk.BooleanVar(value=True)
+        self.north_var.trace_add("write", lambda *_: self._refresh())
         ttk.Checkbutton(g, text="North arrow on the bottom strip",
                         variable=self.north_var).pack(anchor="w")
         ttk.Label(g, text="Both sit on the flat strip below the map, beside the "
@@ -434,12 +531,16 @@ class App(tk.Tk):
         ttk.Separator(g).pack(fill="x", pady=(10, 6))
 
         self.route_only_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(g, text="Route only \u2014 no surrounding landscape",
-                        variable=self.route_only_var).pack(anchor="w")
-        ttk.Label(g, text="The route stands on a flat base as an elevation profile. "
-                          "The base still carries the caption, scale and arrow.",
-                  foreground=HINT, font=("", 10), wraplength=390,
-                  justify="left").pack(anchor="w", pady=(0, 6))
+        self.route_only_var.trace_add("write", lambda *_: self._refresh())
+        ro_box = ttk.Checkbutton(g, text="Route only \u2014 no surrounding landscape",
+                                 variable=self.route_only_var)
+        ro_box.pack(anchor="w")
+        ro_hint = ttk.Label(
+            g, text="The route stands on a flat base as an elevation profile. "
+                    "The base still carries the caption, scale and arrow.",
+            foreground=HINT, font=("", 10), wraplength=390, justify="left")
+        ro_hint.pack(anchor="w", pady=(0, 6))
+        self.f_route_only = Field(ro_box, ro_hint)
 
         self.stl_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(g, text="Also save STL files", variable=self.stl_var).pack(
@@ -494,11 +595,72 @@ class App(tk.Tk):
         )
 
     def _toggle_caption(self):
-        on = "normal" if self.cap_on.get() else "disabled"
-        self.cap_entry.configure(state=on)
-        # The lettering style still drives the scale bar and north arrow, so it
-        # stays usable even with the caption switched off.
-        self.cut_box.configure(state="readonly")
+        self.cap_entry.configure(
+            state="normal" if self.cap_on.get() else "disabled"
+        )
+        self._refresh()
+
+    def _refresh(self, *_):
+        """Grey out every setting that cannot change this particular print.
+
+        Left live, they are worse than clutter: someone types a trail width for a
+        map with no trail on it, gets a file that looks nothing like what they
+        asked for, and has no way of telling which of the two dozen boxes was the
+        one being ignored. A greyed box answers that before it is asked.
+        """
+        from .tiling import TILEABLE
+
+        def number(var, fallback=0.0):
+            try:
+                return float(var.get())
+            except (tk.TclError, ValueError):
+                return fallback
+
+        files = bool(self.gpx_files)
+        coord = bool(self.at_var.get().strip())
+        # A coordinate is only used when there are no files; files win.
+        map_only = coord and not files
+        has_route = not map_only
+        route_only = bool(self.route_only_var.get()) and has_route
+        from_below = self.entry_var.get().startswith("From under") and not route_only
+
+        # The strip exists if anything asked for it, and only then can it carry a
+        # caption, sit on either side, or be printed on its own.
+        has_strip = bool(
+            (self.cap_on.get() and self.cap_var.get().strip())
+            or self.scale_var.get() or self.north_var.get()
+        )
+        tileable = self.shape_var.get().lower() in TILEABLE
+        tiles = int(number(self.tiles_var, 1))
+
+        self.f_at.enable(not files)
+        self.f_across.enable(map_only)
+
+        # A route that is not there needs no line, no fit and no joining up.
+        self.width.enable(has_route)
+        self.f_fit.enable(has_route and not route_only)
+        self.f_entry.enable(has_route and not route_only)
+        self.f_style.enable(has_route and not route_only and not from_below)
+        self.thick.enable(has_route and not route_only and not from_below)
+        self.proud.enable(has_route)
+        self.join.enable(has_route)
+        self.merge.enable(has_route)
+        self.f_route_only.enable(has_route)
+        self.margin.enable(has_route)
+        self.fit_group.configure(
+            text="3.  How the two parts fit" if has_route and not route_only
+            else "3.  How the parts fit  —  nothing to fit on this print"
+        )
+
+        self.f_cap_pos.enable(has_strip)
+        self.f_cut.enable(has_strip)
+        self.f_strip.enable(has_strip)
+
+        self.f_tiles.enable(tileable)
+        self.f_layout.enable(tileable and tiles > 1)
+
+        # An explicit scale decides the size, so the size box no longer does.
+        self.size.enable(number(self.scale.var) <= 0)
 
     def _toggle_adv(self):
         if self.adv_open.get():
@@ -546,6 +708,7 @@ class App(tk.Tk):
         self._refresh_files()
 
     def _refresh_files(self):
+        self._refresh()
         self.file_list.delete(0, "end")
         for p in self.gpx_files:
             self.file_list.insert("end", f"  {Path(p).name}")
@@ -633,6 +796,7 @@ class App(tk.Tk):
                          else "divide"),
             caption_position=("top" if "top" in self.cap_pos_var.get().lower()
                               else "bottom"),
+            separate_strip=bool(self.strip_var.get()),
             caption_style=(
                 "deboss" if self.cut_var.get().startswith("Engraved")
                 else "emboss"

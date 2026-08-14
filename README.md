@@ -111,6 +111,7 @@ python -m gpx2print walk.gpx --dry-run --preview walk.png
 | `--tiles N` | 1 | Cut the map into N tessellating pieces. `square`, `triangle` and `hexagon` only. |
 | `--tile-layout` | divide | `divide` keeps the map's shape and bends the count; `assemble` keeps the count and lets the tiles decide the shape. |
 | `--caption-position` | bottom | Which side the caption strip sits on: `bottom` or `top`. |
+| `--separate-strip` | off | Print the caption strip as its own part, tongued into the map, so the caption, scale bar and arrow can be a second colour. |
 | `--margin F` | 0.15 | How much terrain to show around the track, as a fraction of its extent. |
 | `--trail-entry` | top | `top` drops the route into a groove; `bottom` pushes it up through a slot cut right through. |
 | `--trail-base` | flat | `flat` prints without support; `follow` is compact but needs support. |
@@ -269,6 +270,7 @@ offset flattens most of the terrain.
 ```bash
 python -m gpx2print walk.gpx --shape hexagon --caption "Ben Nevis"
 python -m gpx2print walk.gpx --shape circle --caption-position top
+python -m gpx2print walk.gpx --caption "Ben Nevis" --separate-strip
 ```
 
 The plate can be a **rectangle, square, circle, triangle, pentagon, hexagon or

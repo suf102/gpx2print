@@ -108,6 +108,15 @@ have not walked yet.
 - *Pieces make* — only matters once you've split it. See below.
 - *Caption* — text along the edge. A name and a date works nicely.
 - *Caption strip* — put it along the bottom or the top.
+- *Print the strip as a separate piece* — the strip carries the caption, the
+  distance scale and the north arrow, so printing it on its own is how you get
+  those in a **second colour**. It comes away along the map's own edge and pushes
+  back on with a few tongues, at whatever fit you chose in section 3. You get an
+  extra file, `yourname_strip.3mf`.
+
+  On a circle, or the point of a triangle, the edge curves away and there is
+  nowhere for a tongue to bite. It says so and the two just butt together, so
+  you'll want a dab of glue.
 - *Lettering* — **Engraved** cuts the text into the surface, **Raised** makes it stand
   out. Engraved usually prints more neatly, so it's the default. This also changes the
   distance scale and north arrow.
@@ -164,6 +173,19 @@ last.
 - *Trail piece shape* — leave on **Flat bottom** unless your route climbs a mountain
   and the trail piece comes out awkwardly tall.
 
+### Settings that go grey
+
+Boxes that cannot affect *this* print grey themselves out as you go. Type a
+coordinate instead of choosing files and everything about the trail — its width,
+its fit, which way it goes in — goes grey, because there is no trail on that
+print. Set a scale and *Map size* goes grey, because the scale decides the size.
+Turn off the caption, the distance scale and the north arrow and everything about
+the strip goes grey, because there is no strip.
+
+Nothing is hidden and nothing is lost: turn the setting back on and the boxes come
+back exactly as you left them. It is only there so you can see at a glance which
+numbers are actually doing something.
+
 Everything else is under *Advanced settings* and you can ignore it — though two things
 in there are worth knowing about:
 
@@ -197,6 +219,7 @@ Press **Create print files**. When it finishes you'll have:
 ```
 yourname_map.3mf     the landscape
 yourname_trail.3mf   the route that clips into it
+yourname_strip.3mf   the caption strip, if you asked for it separately
 yourname.png         the preview picture, to keep
 ```
 
@@ -213,6 +236,10 @@ Press **Open the folder** to find them.
 ## 5. Print
 
 Open **yourname_map.3mf** in your slicer, load your landscape colour, and print it.
+
+If you asked for the strip separately, **yourname_strip.3mf** is the one to load your
+third colour for — or your second, if there's no route. It's flat and thin, so it
+prints quickly.
 
 Then open **yourname_trail.3mf**, load your route colour, and print that.
 

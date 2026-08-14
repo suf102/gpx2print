@@ -169,6 +169,15 @@ def export_parts(
             name = "Trail" if len(trails) == 1 else f"Trail {i + 1}"
             jobs.append((path, mesh, name, colors[i]))
 
+    # The caption strip, when it is a part of its own. It carries the caption,
+    # the scale bar and the arrow, which is the whole reason for separating it,
+    # so it is listed last: it is the one you load the second colour for.
+    if b.strip_mesh is not None:
+        jobs.append(
+            (f"{Path(out_path).with_suffix('')}_strip.3mf", b.strip_mesh,
+             "Caption strip", cfg.map_color)
+        )
+
     for path, mesh, name, color in jobs:
         write_3mf(
             path,
@@ -242,6 +251,8 @@ def export_parts(
             for i, mesh in enumerate(trails):
                 suffix = "_trail.stl" if len(trails) == 1 else f"_trail{i + 1}.stl"
                 items.append((suffix, mesh))
+        if b.strip_mesh is not None:
+            items.append(("_strip.stl", b.strip_mesh))
         for suffix, mesh in items:
             out = mesh if keep else mesh.copy()
             if not keep:

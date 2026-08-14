@@ -33,6 +33,9 @@ class Build:
     path_mm: MultiLineString = None
     plinth_polys: object = None
     plate_poly: object = None
+    strip_mesh: object = None
+    strip_poly: object = None
+    strip_tabs: list = field(default_factory=list)
     tile_polys: list = field(default_factory=list)
     band_mm: float = 0.0
     stats: dict = field(default_factory=dict)
@@ -223,6 +226,48 @@ _CREDIT_ASPECTS = (5.0, 3.2, 2.2)
 _CREDIT_SPOTS = ((0.5, 0.5), (0.5, 0.34), (0.5, 0.66), (0.3, 0.5), (0.7, 0.5),
                  (0.3, 0.34), (0.7, 0.34), (0.3, 0.66), (0.7, 0.66),
                  (0.5, 0.2), (0.5, 0.8))
+
+
+def _strip_tabs(plate, region, band: float, y_join: float, on_top: bool):
+    """Tongues that hold a separately printed caption strip onto the map.
+
+    Butted up and left at that, the strip is a loose bar that needs gluing. A few
+    tongues along the seam turn it into something that pushes on and stays on.
+    They lie flat in the plane of the print, so neither part gains an overhang:
+    each is a plain slot in the map and a plain lug on the strip, both running
+    straight up from the bed.
+
+    Spread across the seam, roughly one per 55 mm, and each shrunk until it fits
+    where it stands. A tongue is kept only where enough of it lands in the map to
+    be worth having: against a circle, or the point of a triangle, the seam curves
+    away and there is nothing to bite into, so those come back with none and the
+    caller says the parts have to be glued instead.
+    """
+    x0, _, x1, _ = plate.bounds
+    depth = min(6.0, max(3.0, band * 0.45))
+    width = min(14.0, max(5.0, band * 0.9))
+    # Reach back across the seam so the tongue overlaps the strip rather than
+    # merely touching it along a line, which is a join that floating point does
+    # not always agree is a join at all.
+    reach = 0.4
+
+    room = region.buffer(1e-6)
+    n = min(max(int(round((x1 - x0) / 55.0)), 2), 6)
+    tabs = []
+    for k in range(n):
+        cx = x0 + (x1 - x0) * (k + 0.5) / n
+        w = width
+        for _ in range(8):
+            tab = box(
+                cx - w / 2, y_join - depth if on_top else y_join - reach,
+                cx + w / 2, y_join + reach if on_top else y_join + depth,
+            )
+            bite = tab.intersection(plate).area
+            if room.covers(tab) and bite >= 0.25 * tab.area:
+                tabs.append(tab)
+                break
+            w *= 0.8
+    return tabs
 
 
 def _credit_box(poly, text=None, font=None):
@@ -516,12 +561,15 @@ def build(cfg) -> Build:
         region = unary_union([plate_poly, strip_box]).buffer(0)
 
     # ------------------------------------------------------- tessellating pieces
+    # A strip that is leaving to be its own part is not the tiles' to share out,
+    # so they are cut from the plate alone.
+    tiled = plate_poly if (cfg.separate_strip and band > 0) else region
     tile_polys: list = []
     if cfg.tiles and cfg.tiles > 1:
         if assembling:
-            tile_polys = tiling.attach_strip(laid, plate_poly, region)
+            tile_polys = tiling.attach_strip(laid, plate_poly, tiled)
         else:
-            tile_polys = tiling.divide(cfg.shape, plate_poly, region, cfg.tiles)
+            tile_polys = tiling.divide(cfg.shape, plate_poly, tiled, cfg.tiles)
         got = len(tile_polys)
         widest = max(
             max(t.bounds[2] - t.bounds[0], t.bounds[3] - t.bounds[1])
@@ -765,6 +813,7 @@ def build(cfg) -> Build:
     # ------------------------------------------- plinth: caption, scale, north
     scale_info = None
     plinth_polys = None
+    lettering = None
     if band > 0:
         W = pmaxx - pminx
         y_mid = (pmaxy + band / 2.0) if strip_on_top else (pminy - band / 2.0)
@@ -812,17 +861,76 @@ def build(cfg) -> Build:
             plinth_polys = merged
             overlap = max(cfg.caption_depth * 0.5, 0.4)
             if cfg.caption_style == "emboss":
-                solid = meshlib.extrude(
+                lettering = ("union", meshlib.extrude(
                     merged, height=cfg.caption_depth + overlap,
                     z0=cfg.base_mm - overlap,
-                )
-                map_mesh = meshlib.boolean("union", [map_mesh, solid])
+                ))
             else:
-                solid = meshlib.extrude(
+                lettering = ("difference", meshlib.extrude(
                     merged, height=cfg.caption_depth + overlap,
                     z0=cfg.base_mm - cfg.caption_depth,
+                ))
+            # If the strip is leaving to be its own part, the lettering goes on
+            # the strip instead, once there is a strip to put it on.
+            if not cfg.separate_strip:
+                map_mesh = meshlib.boolean(lettering[0], [map_mesh, lettering[1]])
+
+    # --------------------------------- the caption strip as a part of its own
+    # Built rather than carved. Cutting it out of the finished map would hand it
+    # the wall where the flat band meets the first row of terrain: a fin a
+    # thousandth of a millimetre thick and as tall as the mountain, running the
+    # length of the seam. The strip is flat and its own thickness throughout, so
+    # it is simpler to raise it from its own outline and take the same shape out
+    # of the map. This happens before the map is divided into tiles, so the tiles
+    # are map and nothing else.
+    strip_mesh = None
+    strip_poly = None
+    tabs: list = []
+    if cfg.separate_strip and band > 0:
+        strip_poly = tiling.added_by_strip(region, plate_poly)
+        y_join = pmaxy if strip_on_top else pminy
+        tabs = _strip_tabs(plate_poly, region, band, y_join, strip_on_top)
+        tall = float(np.max(Z_mm)) + cfg.trail_proud + 20.0
+
+        cut = [
+            meshlib.extrude(p, height=tall + 10.0, z0=-5.0)
+            for p in tiling.prism_polygons(strip_poly, region,
+                                           keep_out=plate_poly)
+        ]
+        solid = strip_poly
+        if tabs:
+            lug = unary_union(tabs)
+            solid = unary_union([strip_poly, lug]).buffer(0)
+            # The slot is the tongue plus the clearance, and stops short of the
+            # full thickness so the two press together on their faces rather
+            # than jamming on their roofs.
+            cut.append(
+                meshlib.extrude(
+                    lug.buffer(cfg.tolerance, resolution=8),
+                    height=cfg.base_mm + 5.0 + cfg.tolerance, z0=-5.0,
                 )
-                map_mesh = meshlib.boolean("difference", [map_mesh, solid])
+            )
+            log(f"  caption strip on its own, held by {len(tabs)} tongue(s)")
+        else:
+            log("  caption strip on its own, butted against the map")
+            warnings.append(
+                "the caption strip has nowhere along its seam deep enough for a "
+                "tongue, so it butts up against the map and needs gluing. A taller "
+                "strip with --caption-height would give it something to hold."
+            )
+
+        strip_mesh = meshlib.extrude(solid, height=cfg.base_mm, z0=0.0)
+        if plinth_polys is not None:
+            strip_mesh = meshlib.boolean(
+                lettering[0], [strip_mesh, lettering[1]]
+            )
+        map_mesh = meshlib.boolean("difference", [map_mesh, *(
+            [meshlib.boolean("union", cut)] if len(cut) > 1 else cut)])
+    elif cfg.separate_strip:
+        warnings.append(
+            "--separate-strip had nothing to separate: there is no caption strip "
+            "unless there is a caption, a scale bar or a north arrow"
+        )
 
     # ------------------------------------------- credit on the underside
     credit_text, credit_short = dem.engraved_credit_for(source)
@@ -855,7 +963,7 @@ def build(cfg) -> Build:
                 "union",
                 [
                     meshlib.extrude(p, height=tall + 10.0, z0=-5.0)
-                    for p in tiling.prism_polygons(tile, region)
+                    for p in tiling.prism_polygons(tile, tiled)
                 ],
             )
             piece = meshlib.boolean("intersection", [map_mesh, knife])
@@ -906,7 +1014,10 @@ def build(cfg) -> Build:
     else:
         if cfg.credit:
             box_w = (pmaxx - pminx) * 0.86
-            if band > 0:
+            # Normally the credit goes on the flat strip, which is the one place
+            # with room for it. If the strip has left to be its own part it takes
+            # its own copy, and the map needs one of its own on the terrain side.
+            if band > 0 and strip_mesh is None:
                 box_h = band * 0.72
                 cy = (pmaxy + band / 2.0) if strip_on_top else (pminy - band / 2.0)
             else:
@@ -932,6 +1043,23 @@ def build(cfg) -> Build:
                 f"fitted; print them all."
             )
         map_mesh = map_meshes[0]
+
+    if strip_mesh is not None and cfg.credit:
+        # It is a separate object now, and could be handed on by itself, so it
+        # carries the whole credit rather than the map's copy of it.
+        fit = _credit_box(strip_poly, credit_text, cfg.caption_font)
+        if fit is None:
+            warnings.append(
+                "there was no room on the caption strip for the terrain credit, "
+                "so it was left off that piece"
+            )
+        else:
+            w, h, cx, cy = fit
+            strip_mesh, lines, cap = _engrave_credit(
+                strip_mesh, cfg, credit_text, credit_short, w, h, (cx, cy),
+                log, warnings, label="the caption strip",
+            )
+            credit_lines = credit_lines or lines
 
     # ------------------------------------------------------------------ stats
     length_m = 0.0 if map_only else gpx_io.track_length_m(track)
@@ -995,6 +1123,15 @@ def build(cfg) -> Build:
         "n_map_parts": len(map_meshes),
         "tiles_wanted": int(cfg.tiles or 0),
         "tile_layout": cfg.tile_layout,
+        "separate_strip": strip_mesh is not None,
+        "strip_size_mm": (
+            (
+                float(strip_mesh.bounds[1][0] - strip_mesh.bounds[0][0]),
+                float(strip_mesh.bounds[1][1] - strip_mesh.bounds[0][1]),
+                float(strip_mesh.bounds[1][2] - strip_mesh.bounds[0][2]),
+            )
+            if strip_mesh is not None else None
+        ),
         "n_tiles": len(tile_polys),
         "tile_size_mm": (
             (
@@ -1079,6 +1216,9 @@ def build(cfg) -> Build:
         path_mm=path,
         plinth_polys=plinth_polys,
         plate_poly=plate_poly,
+        strip_mesh=strip_mesh,
+        strip_poly=strip_poly,
+        strip_tabs=tabs,
         tile_polys=tile_polys,
         band_mm=band,
         stats=stats,

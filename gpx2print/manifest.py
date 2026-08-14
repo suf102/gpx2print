@@ -107,6 +107,8 @@ def command_line(cfg, out_path: str, combined=False, stl=False,
         ]
     else:
         argv += ["--caption-style", cfg.caption_style]
+    if cfg.separate_strip:
+        argv += ["--separate-strip"]
     if cfg.caption_font:
         argv += ["--caption-font", str(cfg.caption_font)]
 
@@ -203,7 +205,10 @@ def render(b, cfg, written: list[str], out_path: str, combined=False, stl=False,
          + ("outline follows the tiles" if cfg.tile_layout == "assemble"
             else f"cut from one {cfg.shape}")
          if s.get("n_tiles", 0) > 1 else "no, printed whole"),
-        ("Caption strip", f"along the {cfg.caption_position}"),
+        ("Caption strip",
+         f"along the {cfg.caption_position}"
+         + (", printed separately and tongued into the map"
+            if s.get("separate_strip") else "")),
         ("Route fitted", f"from the {cfg.trail_entry}"),
         ("Altitude measured from",
          f"{cfg.altitude_offset_m:+g} m relative to the lowest ground"
@@ -268,7 +273,7 @@ def render(b, cfg, written: list[str], out_path: str, combined=False, stl=False,
     if str(s.get("dem_source", "")).startswith("terrarium"):
         zoom = str(s["dem_source"]).split()[-1]
         add("  The tile zoom was chosen automatically from the map size. Re-running")
-        add(f"  at a different --size may pick a different zoom; pin it with")
+        add("  at a different --size may pick a different zoom; pin it with")
         add(f"  --dem-zoom {zoom.lstrip('z')} to rule that out.")
         add("")
     add("  Elevation tiles are fetched from a live public dataset and cached under")

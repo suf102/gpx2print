@@ -202,6 +202,11 @@ def build_parser() -> argparse.ArgumentParser:
                         f"it. Engraved usually prints more cleanly and applies to "
                         f"the scale bar and north arrow too "
                         f"(default: {d.caption_style})")
+    g.add_argument("--separate-strip", action="store_true",
+                   help="print the caption strip as its own part instead of "
+                        "joined to the map, so the caption, scale bar and north "
+                        "arrow can be a different colour. It is held on by "
+                        "tongues cut to the same fit as the trail")
     g.add_argument("--caption-font", default=None, help="path to a .ttf or .otf font")
     g.add_argument("--no-scale-bar", dest="scale_bar", action="store_false",
                    help="omit the distance scale from the plinth")
@@ -279,6 +284,7 @@ def args_to_config(a) -> Config:
         caption_size=a.caption_size,
         caption_depth=a.caption_depth,
         caption_style=a.caption_style,
+        separate_strip=a.separate_strip,
         caption_font=a.caption_font,
         credit=a.credit,
         credit_height_mm=a.credit_height,
@@ -406,6 +412,10 @@ def _report(b, cfg, secs):
         print(f"  {'trail part':<20}{s['trail_size_mm'][0]:.1f} x "
               f"{s['trail_size_mm'][1]:.1f} x {s['trail_size_mm'][2]:.1f} mm, "
               f"{s['trail_health']['faces']:,} faces")
+    if s.get("separate_strip"):
+        ss = s["strip_size_mm"]
+        print(f"  {'caption strip':<20}{ss[0]:.1f} x {ss[1]:.1f} x {ss[2]:.1f} mm, "
+              f"its own part — load your second colour for it")
     if not s.get("route_only") and not s.get("map_only"):
         print(f"  {'fit':<20}channel {s['channel_width_mm']:.2f} mm, insert "
           f"{s['insert_width_mm']:.2f} mm, {s['total_clearance_mm']:.2f} mm total "

@@ -564,6 +564,18 @@ def _despike(poly):
     return unary_union(out) if out else poly
 
 
+def added_by_strip(region, plate):
+    """The part of the whole footprint that is caption strip rather than plate.
+
+    Not simply the band hanging off the edge: the strip is squared off, so where
+    the plate is a hexagon or a circle the corners beside it belong to the strip
+    too. Taking the difference gets all of it and puts the seam exactly on the
+    plate's own outline, which is where a separately printed strip should part
+    company with the map.
+    """
+    return _strip_only(_snap(region), _snap(plate))
+
+
 def _strip_only(region, plate):
     """What the caption strip adds to the plate, with the boolean's litter gone."""
     left = _despike(_snap(region.difference(plate)))
@@ -746,7 +758,7 @@ a twentieth of a millimetre, well inside what any printer holds anyway.
 """
 
 
-def prism_polygons(tile, region, out_mm: float = 1.2) -> list:
+def prism_polygons(tile, region, out_mm: float = 1.2, keep_out=None) -> list:
     """The shapes to extrude and join into the tool that cuts this piece out.
 
     Coincident faces are what a boolean engine handles worst, and the map's own
@@ -762,13 +774,21 @@ def prism_polygons(tile, region, out_mm: float = 1.2) -> list:
     wide in the finished mesh — which survive in memory and come apart on the way
     back off disk. Extruding each shape cleanly and letting the boolean engine
     join the solids avoids both.
+
+    `keep_out` is somewhere the collar must not go. Standing the collar off the
+    outer wall means biting a hair back inside it, and where the piece runs up
+    against that wall from the side — the ends of a caption strip, against the
+    edge of the map it is parting from — that bite lands on the neighbour and
+    takes a sliver of hillside away with the piece, full height. Naming the
+    neighbour keeps the collar off it.
     """
     tile, region = _snap(tile), _snap(region)
-    collar = _snap(
-        tile.buffer(out_mm, join_style=2, mitre_limit=3.0).difference(
-            region.buffer(-COLLAR_BITE_MM, join_style=2, mitre_limit=3.0)
-        )
+    collar = tile.buffer(out_mm, join_style=2, mitre_limit=3.0).difference(
+        region.buffer(-COLLAR_BITE_MM, join_style=2, mitre_limit=3.0)
     )
+    if keep_out is not None:
+        collar = collar.difference(_snap(keep_out))
+    collar = _snap(collar)
     out = [tile]
     for g in getattr(collar, "geoms", [collar]):
         if not g.is_empty and g.area > 0.05:
