@@ -135,29 +135,36 @@ def export_parts(
     route_only = bool(b.stats.get("route_only"))
     written: list[str] = []
 
-    if map_only:
-        # Nothing but landscape, so one object and one file.
-        jobs = [(out_path, b.map_mesh, "Map", cfg.map_color)]
-    elif route_only:
-        # The route is already welded to its base, so there is one object and one
-        # file. Nothing to fit together, nothing to keep in register.
-        jobs = [(out_path, b.map_mesh, "Route", cfg.map_color)]
+    stem = Path(out_path).with_suffix("")
+    maps = b.map_meshes or [b.map_mesh]
+    tiled = int(b.stats.get("n_tiles") or 0) > 1
+
+    if tiled:
+        # A tessellated plate is a set of equal objects rather than one object
+        # with afterthoughts, so they are numbered plainly and none is "the map".
+        jobs = [
+            (f"{stem}_tile{i}.3mf", m, f"Tile {i} of {len(maps)}", cfg.map_color)
+            for i, m in enumerate(maps, 1)
+        ]
+    elif map_only or route_only:
+        # Nothing to fit together and nothing to keep in register, so one object
+        # in one file, named for what it actually is.
+        jobs = [(out_path, b.map_mesh, "Map" if map_only else "Route",
+                 cfg.map_color)]
+    elif len(maps) == 1:
+        jobs = [(part_paths(out_path, len(trails), route_only)[0], maps[0],
+                 "Map", cfg.map_color)]
     else:
-        map_path, trail_paths = part_paths(out_path, len(trails), route_only)
-        colors = trail_colors(cfg.trail_color, len(trails))
-
         # A slot cut right through can leave the map in several pieces.
-        maps = b.map_meshes or [b.map_mesh]
-        stem = Path(out_path).with_suffix("")
-        if len(maps) == 1:
-            jobs = [(map_path, maps[0], "Map", cfg.map_color)]
-        else:
-            jobs = [
-                (f"{stem}_map{i}.3mf", m,
-                 f"Map {i}" if i > 1 else "Map 1 (largest)", cfg.map_color)
-                for i, m in enumerate(maps, 1)
-            ]
+        jobs = [
+            (f"{stem}_map{i}.3mf", m,
+             f"Map {i}" if i > 1 else "Map 1 (largest)", cfg.map_color)
+            for i, m in enumerate(maps, 1)
+        ]
 
+    colors = trail_colors(cfg.trail_color, max(len(trails), 1))
+    if not map_only and not route_only:
+        _, trail_paths = part_paths(out_path, len(trails), route_only)
         for i, (path, mesh) in enumerate(zip(trail_paths, trails)):
             name = "Trail" if len(trails) == 1 else f"Trail {i + 1}"
             jobs.append((path, mesh, name, colors[i]))
@@ -184,7 +191,11 @@ def export_parts(
                 b.warnings.append(f"{Path(path).name}: {why}")
         log(f"wrote {path} ({Path(path).stat().st_size / 1024:,.0f} kB){note}")
 
-    if combined and not route_only and not map_only:
+    if combined and tiled:
+        # There is no single map object left to pair the insert with.
+        log("skipping --combined: the map is in tiles, so there is nothing to "
+            "put side by side")
+    elif combined and not route_only and not map_only:
         map_off, trail_off = layout_offsets(b, layout)
         parts = [
             {
@@ -221,10 +232,13 @@ def export_parts(
 
     if stl:
         stem = str(Path(out_path).with_suffix(""))
-        if route_only or map_only:
+        if tiled:
+            items = [(f"_tile{i}.stl", m) for i, m in enumerate(maps, 1)]
+        elif route_only or map_only:
             items = [(".stl", b.map_mesh)]
         else:
             items = [("_map.stl", b.map_mesh)]
+        if not route_only and not map_only:
             for i, mesh in enumerate(trails):
                 suffix = "_trail.stl" if len(trails) == 1 else f"_trail{i + 1}.stl"
                 items.append((suffix, mesh))

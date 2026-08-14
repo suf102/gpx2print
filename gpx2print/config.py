@@ -69,6 +69,27 @@ class Config:
     shape would crop the corners off the map and take part of the route with it.
     """
 
+    tiles: int = 0
+    """Split the map into this many tessellating pieces. 0 or 1 leaves it whole.
+
+    Only for the shapes that tile the plane — square, triangle and hexagon — since
+    the pieces are smaller copies of the plate's own outline. Squares and triangles
+    divide k x k, so the reachable counts are 1, 4, 9, 16 and so on and the nearest
+    is used; hexagons can land on very nearly any number. The map is not made any
+    bigger: each piece is the overall size divided between them.
+    """
+
+    tile_layout: str = "divide"
+    """How the pieces relate to the map's outline.
+
+    divide: cut the chosen shape into pieces. The map stays a hexagon (or square,
+    or triangle), and the count bends to what that shape can be cut into.
+
+    assemble: lay down exactly the number of tiles asked for and let the outline
+    be whatever they add up to. Six hexagons really are six hexagons, and the map
+    is a cluster of them rather than one big hexagon.
+    """
+
     caption_position: str = "bottom"
     """Which side of the plate the caption strip is attached to: bottom or top."""
 
@@ -245,6 +266,25 @@ class Config:
         from .shapes import SHAPES
         if self.shape not in SHAPES:
             raise ValueError(f"--shape must be one of: {', '.join(SHAPES)}")
+        from .tiling import LAYOUTS
+
+        if self.tile_layout not in LAYOUTS:
+            raise ValueError(f"--tile-layout must be one of: {', '.join(LAYOUTS)}")
+        if self.tiles and self.tiles > 1:
+            from .tiling import TILEABLE
+
+            if self.shape not in TILEABLE:
+                raise ValueError(
+                    f"a {self.shape} does not tessellate, so --tiles cannot divide "
+                    f"it. Use --shape {' or '.join(TILEABLE)}, or drop --tiles"
+                )
+            if self.tiles > 64:
+                raise ValueError(
+                    "--tiles above 64 would take a very long time to cut and give "
+                    "pieces too small to be worth printing separately"
+                )
+        if self.tiles < 0:
+            raise ValueError("--tiles cannot be negative")
         if self.caption_position not in ("bottom", "top"):
             raise ValueError("--caption-position must be 'bottom' or 'top'")
         if self.trail_entry not in ("top", "bottom"):

@@ -248,17 +248,48 @@ def render(build, cfg, path: str, dpi: int = 170) -> str:
     # plate outline and caption strip
     from matplotlib.patches import PathPatch as _PP2
 
+    # Above the seams: a piece's boundary is part seam and part the edge of the
+    # map, and the outline drawn last is what keeps the outside reading as solid
+    # while the cuts inside it read as dashed.
     if plate_path is not None:
-        ax.add_patch(_PP2(plate_path, fill=False, ec=INK, lw=1.4, zorder=7))
+        ax.add_patch(_PP2(plate_path, fill=False, ec=INK, lw=1.4, zorder=12))
         pminx, pminy, pmaxx, pmaxy = plate.bounds
     else:
-        ax.add_patch(Rectangle((0, 0), W, H, fill=False, ec=INK, lw=1.4, zorder=7))
+        ax.add_patch(Rectangle((0, 0), W, H, fill=False, ec=INK, lw=1.4, zorder=12))
         pminx, pminy, pmaxx, pmaxy = 0.0, 0.0, W, H
+    # The seams between tessellating pieces, and which piece is which. Drawn over
+    # everything else, because where the map comes apart is the thing you most
+    # want to check before spending a day of printer time on it.
+    tiles = getattr(b, "tile_polys", None) or []
+    if len(tiles) > 1:
+        for i, tile in enumerate(tiles, 1):
+            seam = _poly_path(tile)
+            if seam is not None:
+                ax.add_patch(
+                    PathPatch(seam, fill=False, ec="#ffffff", lw=2.6, zorder=9,
+                              joinstyle="round")
+                )
+                ax.add_patch(
+                    PathPatch(seam, fill=False, ec=INK, lw=1.0, zorder=10,
+                              linestyle=(0, (5, 3)))
+                )
+            c = tile.representative_point()
+            ax.text(
+                c.x, c.y, str(i), fontsize=8, weight="bold", color=INK,
+                ha="center", va="center", zorder=11,
+                bbox={"boxstyle": "circle,pad=0.24", "facecolor": "#ffffffcc",
+                      "edgecolor": INK, "linewidth": 0.7},
+            )
+
     if band > 0:
         sy = pmaxy if on_top else pminy - band
         ax.add_patch(
             Rectangle((pminx, sy), pmaxx - pminx, band,
-                      facecolor="#e8e3d9", ec=INK, lw=1.4, zorder=7)
+                      facecolor="#e8e3d9", ec="none", zorder=7)
+        )
+        ax.add_patch(
+            Rectangle((pminx, sy), pmaxx - pminx, band,
+                      fill=False, ec=INK, lw=1.4, zorder=12)
         )
         # Draw the very polygons the model is built from, so the preview cannot
         # drift out of step with what actually prints.
@@ -289,8 +320,14 @@ def render(build, cfg, path: str, dpi: int = 170) -> str:
     ax.set_yticks([])
     for s in ax.spines.values():
         s.set_visible(False)
+    seams = ""
+    if len(tiles) > 1:
+        tw, th = st["tile_size_mm"]
+        seams = (f"   ·   in {len(tiles)} {st['shape']}s, "
+                 f"largest {tw:.0f} × {th:.0f} mm")
     ax.set_title(
-        f"printed footprint  {pmaxx - pminx:.0f} × {pmaxy - pminy + band:.0f} mm",
+        f"printed footprint  {pmaxx - pminx:.0f} × {pmaxy - pminy + band:.0f} mm"
+        + seams,
         fontsize=8.5,
         color="#5a6068",
         pad=6,
@@ -363,7 +400,15 @@ def render(build, cfg, path: str, dpi: int = 170) -> str:
     axf.axis("off")
     tw, td = st["trail_size_mm"], st["insert_thickness_mm"]
     ms = st["map_size_mm"]
-    if map_only:
+    if len(tiles) > 1:
+        tw, th = st["tile_size_mm"]
+        footer = (
+            f"{st['n_map_parts']} objects to print        "
+            f"largest piece {tw:.0f} × {th:.0f} × {ms[2]:.1f} mm        "
+            + (f"{st['across_km']:g} km across        " if map_only else "")
+            + f"1:{st['scale_denominator']:,.0f}"
+        )
+    elif map_only:
         footer = (
             f"one object  {ms[0]:.0f} × {ms[1]:.0f} × {ms[2]:.1f} mm        "
             f"{st['across_km']:g} km across        1:{st['scale_denominator']:,.0f}"

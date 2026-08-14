@@ -103,11 +103,47 @@ have not walked yet.
 - *Shape of the map* — rectangle, square, circle, triangle, pentagon, hexagon or
   octagon. Whatever you choose is made big enough to hold the whole walk, then scaled
   back to the size you asked for, so nothing is ever cut off.
+- *Split into pieces* — leave it at **1** for one whole map. See below if you want a
+  map bigger than your printer.
+- *Pieces make* — only matters once you've split it. See below.
 - *Caption* — text along the edge. A name and a date works nicely.
 - *Caption strip* — put it along the bottom or the top.
 - *Lettering* — **Engraved** cuts the text into the surface, **Raised** makes it stand
   out. Engraved usually prints more neatly, so it's the default. This also changes the
   distance scale and north arrow.
+
+### A map bigger than your printer
+
+Set *Map size* to whatever you actually want — 300 mm, say — and turn *Split into
+pieces* up. The map comes out cut into that many smaller copies of its own shape, which
+sit back together like tiles. The progress box tells you **how big the largest piece
+is**, so you can check it against your printer before spending a day on it.
+
+This only works for **Square, Triangle and Hexagon**, because those are the shapes that
+fit together with no gaps. Pick one of those first, or it will tell you it can't.
+
+**Then choose what *Pieces make* should do**, because you can't have both:
+
+- ***Keep the map's shape*** — the map is still a hexagon, cut into a honeycomb. But a
+  hexagon only cuts into 7, 13, 19 or 31 (and squares and triangles into 4, 9, 16 or
+  25), so you get the nearest and it tells you which. Ask for 6 hexagons and you'll get
+  7.
+- ***Exactly this many pieces*** — you get the number you asked for, whatever it is, and
+  the map's outline becomes whatever those tiles add up to. Six hexagons really are six
+  hexagons, all the same size, in a cluster shape.
+
+Six hexagons don't add up to a hexagon, and no amount of arranging will make them —
+that's the whole choice. If you want a hexagonal map, keep the shape. If you want an
+exact number of identical pieces, choose exactly.
+
+One thing to know about *exactly*: the tiles have to cover the whole walk between them,
+and sometimes a particular number wraps it loosely, leaving the route small in a lot of
+surrounding countryside. It warns you when that happens and tells you roughly how much
+of the print the walk takes up, so you can try a different number.
+
+The route is **not** cut up — it stays one piece and crosses several tiles, which is
+what holds them together once you push it in. Print all the tiles, push the route in
+last.
 
 **3. How the two parts fit**
 - *Fit* — how tightly the route clips into the map. Leave it on **Normal** for now;
@@ -168,6 +204,10 @@ If your walk came out as more than one piece you'll get `yourname_trail1.3mf`,
 `yourname_trail2.3mf` and so on — one per piece, each shown in its own colour on the
 preview.
 
+If you split the map into tiles you'll get `yourname_tile1.3mf`, `yourname_tile2.3mf`
+and so on instead of one map file. They're numbered left to right, top to bottom, the
+same as on the preview.
+
 Press **Open the folder** to find them.
 
 ## 5. Print
@@ -210,7 +250,9 @@ mapping agencies.
 
 Using it comes with one condition: **you have to credit it**. That's done for you — a
 small line of text is engraved into the **underside of the map**, so the credit stays
-with the object even if the files are long gone. Turn the print over and you'll see it
+with the object even if the files are long gone. If you split the map into tiles, every
+tile gets the whole credit rather than a slice of it, since any one of them might end up
+somewhere on its own. Turn the print over and you'll see it
 the right way round. It's also written inside both `.3mf` files and printed along the
 bottom of the preview picture.
 

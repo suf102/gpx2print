@@ -9,7 +9,7 @@ import trimesh
 from shapely.geometry import LineString, MultiLineString, box
 from shapely.ops import unary_union
 
-from . import chain, dem, gpx_io, legend, meshlib, shapes, text3d
+from . import chain, dem, gpx_io, legend, meshlib, shapes, text3d, tiling
 
 MIN_FLOOR_MM = 1.2
 """Material left under the deepest point of the channel."""
@@ -33,6 +33,7 @@ class Build:
     path_mm: MultiLineString = None
     plinth_polys: object = None
     plate_poly: object = None
+    tile_polys: list = field(default_factory=list)
     band_mm: float = 0.0
     stats: dict = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
@@ -218,6 +219,83 @@ def _ribbon(path, width: float, clip):
     return poly
 
 
+_CREDIT_ASPECTS = (5.0, 3.2, 2.2)
+_CREDIT_SPOTS = ((0.5, 0.5), (0.5, 0.34), (0.5, 0.66), (0.3, 0.5), (0.7, 0.5),
+                 (0.3, 0.34), (0.7, 0.34), (0.3, 0.66), (0.7, 0.66),
+                 (0.5, 0.2), (0.5, 0.8))
+
+
+def _credit_box(poly, text=None, font=None):
+    """Where to put the credit on the underside of a piece, and how big.
+
+    A piece is not a rectangle, so a box sized from its bounding box would run off
+    the sloping edge of a triangle or out through the point of a hexagon, and the
+    pieces carrying the caption strip are an L shape where a box centred on the
+    middle of nothing fits worst of all. So several positions and proportions are
+    tried, the roomiest of each proportion kept, and — because a long box and a
+    squat one of the same area do not hold the same size of lettering — the
+    winner is the one the words actually come out largest in.
+    """
+    minx, miny, maxx, maxy = poly.bounds
+    span_x, span_y = maxx - minx, maxy - miny
+
+    room = {}
+    for aspect in _CREDIT_ASPECTS:
+        for fx, fy in _CREDIT_SPOTS:
+            cx, cy = minx + span_x * fx, miny + span_y * fy
+            w = span_x * 0.92
+            for _ in range(18):
+                h = w / aspect
+                if poly.contains(box(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2)):
+                    if aspect not in room or w > room[aspect][0]:
+                        room[aspect] = (w, h, cx, cy)
+                    break
+                w *= 0.85
+
+    picks = list(room.values())
+    if not picks or text is None:
+        return max(picks, key=lambda b: b[0] * b[1]) if picks else None
+
+    best = None
+    for fit in picks:
+        try:
+            got = text3d.best_wrap(text, fit[0], fit[1], font)
+        except Exception:  # noqa: BLE001 - a box that will not take the words
+            got = None
+        cap = got[2] if got else 0.0
+        if best is None or cap > best[0]:
+            best = (cap, fit)
+    return best[1]
+
+
+def _engrave_credit(mesh, cfg, text, short, box_w, box_h, centre, log, warnings,
+                    label="the map", quiet=False):
+    """Cut the terrain-data credit into the underside. Never fatal.
+
+    The licence asks for attribution and a printed object carries no file
+    metadata, so this is the only place the credit survives. It is still not
+    worth losing a finished model over a font problem. Returns the mesh, the
+    lines as they were wrapped, and the cap height reached.
+    """
+    try:
+        letters, lines, cap = text3d.underside_text(
+            text,
+            centre_xy=centre,
+            box_w=box_w,
+            box_h=box_h,
+            depth=cfg.credit_depth,
+            font_path=cfg.caption_font,
+            fallback=short,
+        )
+        if not quiet:
+            log(f"  engraving the data credit under {label} "
+                f"({len(lines)} lines, {cap:.1f} mm tall)")
+        return meshlib.boolean("difference", [mesh, letters]), lines, cap
+    except Exception as exc:  # noqa: BLE001 - never lose the model over a label
+        warnings.append(f"could not engrave the credit under {label}: {exc}")
+        return mesh, [], None
+
+
 def build(cfg) -> Build:
     log = _log(cfg)
     cfg.validate()
@@ -275,12 +353,50 @@ def build(cfg) -> Build:
     # track rectangle, or it would crop the corners off the map and take part of
     # the route with them. Widen the window to that shape's bounding box, then
     # rescale so the finished piece still measures --size across.
-    if cfg.shape != "rectangle":
+    #
+    # An explicit scale must survive that growing, so the plate gets bigger
+    # rather than the map being squeezed to fit.
+    target = None if cfg.scale_denominator else cfg.size_mm
+    assembling = bool(cfg.tiles and cfg.tiles > 1 and cfg.tile_layout == "assemble")
+    laid: list = []
+    plate_shape = None
+
+    if assembling:
+        # The outline is not chosen here — it is whatever the tiles add up to. So
+        # lay them out over the track's window first, then take their outline as
+        # the plate and re-frame the map onto it, the same as a grown shape.
+        from shapely import affinity
+
+        was = (frame.width_mm, frame.height_mm)
+        cluster, cells = tiling.assemble(
+            cfg.shape, frame.width_mm, frame.height_mm, cfg.tiles
+        )
+        gx0, gy0, gx1, gy1 = cluster.bounds
+        before = frame.mm_per_m
+        frame = gpx_io.frame_for_box(frame, gx0, gy0, gx1, gy1, target)
+        grew = frame.mm_per_m / before
+
+        def into_frame(g):
+            return affinity.scale(
+                affinity.translate(g, -gx0, -gy0), grew, grew, origin=(0, 0)
+            )
+
+        plate_shape = into_frame(cluster)
+        laid = [into_frame(c) for c in cells]
+
+        loose = cluster.area / (was[0] * was[1])
+        log(f"  {cfg.tiles} {cfg.shape}s laid out around the map, "
+            f"{frame.width_mm:.0f} x {frame.height_mm:.0f} mm overall")
+        if loose > 2.2:
+            warnings.append(
+                f"{cfg.tiles} {cfg.shape}s wrap the walk loosely: it takes up "
+                f"about {100 / loose:.0f}% of the print and the rest is "
+                f"surrounding country. A different number of pieces, or "
+                f"--tile-layout divide, would sit closer."
+            )
+    elif cfg.shape != "rectangle":
         grown = shapes.outline(cfg.shape, frame.width_mm, frame.height_mm)
         gx0, gy0, gx1, gy1 = grown.bounds
-        # An explicit scale must survive the shape growing, so the plate gets
-        # bigger rather than the map being squeezed to fit.
-        target = None if cfg.scale_denominator else cfg.size_mm
         frame = gpx_io.frame_for_box(frame, gx0, gy0, gx1, gy1, target)
         log(f"  {cfg.shape} plate, {frame.width_mm:.0f} x {frame.height_mm:.0f} mm")
     ny, nx = _grid_shape(frame, cfg.grid)
@@ -354,7 +470,10 @@ def build(cfg) -> Build:
 
     # The outline the plate is cut to. Everything else is measured against it, so
     # the strip lines up with the shape rather than with the terrain rectangle.
-    plate_poly = shapes.fill(cfg.shape, frame.width_mm, frame.height_mm)
+    plate_poly = (
+        plate_shape if plate_shape is not None
+        else shapes.fill(cfg.shape, frame.width_mm, frame.height_mm)
+    )
     pminx, pminy, pmaxx, pmaxy = plate_poly.bounds
 
     if band > 0:
@@ -369,6 +488,52 @@ def build(cfg) -> Build:
         ny += 2
 
     X, Y = np.meshgrid(x_1d, y_1d)
+
+    # The whole printed footprint: the plate, plus the caption strip butted onto
+    # it. The strip reaches a little way into the plate — squared off against a
+    # circle or a triangle it would otherwise hang off a tangent or a point — and
+    # everything downstream, the outline clip and the tessellation both, is
+    # measured against this one region so they cannot disagree about the edge.
+    needs_clip = cfg.shape != "rectangle" and not plate_poly.buffer(1e-6).covers(
+        box(0.0, 0.0, frame.width_mm, frame.height_mm)
+    )
+    region = plate_poly
+    strip_box = None
+    if band > 0:
+        want = min(25.0, (pmaxx - pminx) * 0.25)
+        lap, neck = _strip_overlap(plate_poly, strip_on_top, want)
+        if needs_clip and neck < 8.0:
+            warnings.append(
+                f"the caption strip meets the {cfg.shape} over only "
+                f"{neck:.1f} mm and will snap off easily. Put the strip on the "
+                f"shape's flat side with --caption-position, or choose a "
+                f"different --shape."
+            )
+        if strip_on_top:
+            strip_box = box(pminx, pmaxy - lap, pmaxx, pmaxy + band)
+        else:
+            strip_box = box(pminx, pminy - band, pmaxx, pminy + lap)
+        region = unary_union([plate_poly, strip_box]).buffer(0)
+
+    # ------------------------------------------------------- tessellating pieces
+    tile_polys: list = []
+    if cfg.tiles and cfg.tiles > 1:
+        if assembling:
+            tile_polys = tiling.attach_strip(laid, plate_poly, region)
+        else:
+            tile_polys = tiling.divide(cfg.shape, plate_poly, region, cfg.tiles)
+        got = len(tile_polys)
+        widest = max(
+            max(t.bounds[2] - t.bounds[0], t.bounds[3] - t.bounds[1])
+            for t in tile_polys
+        )
+        log(f"  {'built from' if assembling else 'splitting the map into'} {got} "
+            f"tessellating {cfg.shape}(s), largest {widest:.0f} mm across")
+        if got != cfg.tiles:
+            warnings.append(
+                f"you asked for {cfg.tiles} pieces and got {got}: a {cfg.shape} "
+                f"{tiling.counts_near(cfg.shape)}, so the nearest count was used"
+            )
 
     log(
         f"  vertical: relief {relief_mm:.1f} mm on a {cfg.base_mm:.1f} mm base "
@@ -388,38 +553,14 @@ def build(cfg) -> Build:
 
     # A square plate already fills the grid, so intersecting with it would only
     # hand the boolean two coincident walls to argue about. Only clip when the
-    # outline actually removes something.
-    needs_clip = cfg.shape != "rectangle" and not plate_poly.buffer(1e-6).covers(
-        box(0.0, 0.0, frame.width_mm, frame.height_mm)
-    )
+    # outline actually removes something. The strip is squared off and joins the
+    # shape, so clip to the two together rather than to the shape alone.
     if needs_clip:
-        # Cut the plate down to its outline. The strip is squared off and joins
-        # the shape, so clip to the two together rather than to the shape alone.
-        clip_poly = plate_poly
-        if band > 0:
-            # Overlap the strip a little way into the plate. Butted exactly against
-            # it, the strip's edge, the plate's outline and a row of the terrain
-            # grid all land on the same plane, and the clip boolean returns a
-            # surface that only looks closed until something merges its vertices.
-            want = min(25.0, (pmaxx - pminx) * 0.25)
-            lap, neck = _strip_overlap(plate_poly, strip_on_top, want)
-            if neck < 8.0:
-                warnings.append(
-                    f"the caption strip meets the {cfg.shape} over only "
-                    f"{neck:.1f} mm and will snap off easily. Put the strip on the "
-                    f"shape's flat side with --caption-position, or choose a "
-                    f"different --shape."
-                )
-            if strip_on_top:
-                strip = box(pminx, pmaxy - lap, pmaxx, pmaxy + band)
-            else:
-                strip = box(pminx, pminy - band, pmaxx, pminy + lap)
-            clip_poly = unary_union([plate_poly, strip]).buffer(0)
         tall = float(np.max(Z_mm)) + 10.0
         log(f"  cutting the plate to a {cfg.shape}")
         terrain = meshlib.boolean(
             "intersection",
-            [terrain, meshlib.extrude(clip_poly, height=tall + 10.0, z0=-5.0)],
+            [terrain, meshlib.extrude(region, height=tall + 10.0, z0=-5.0)],
         )
 
     # ------------------------------------------------------------ trail paths
@@ -686,45 +827,103 @@ def build(cfg) -> Build:
     # ------------------------------------------- credit on the underside
     credit_text, credit_short = dem.engraved_credit_for(source)
     credit_lines: list[str] = []
-    if cfg.credit:
-        box_w = (pmaxx - pminx) * 0.86
-        if band > 0:
-            box_h = band * 0.72
-            cy = (pmaxy + band / 2.0) if strip_on_top else (pminy - band / 2.0)
-        else:
-            box_h = min((pmaxy - pminy) * 0.24, 16.0)
-            cy = pminy + (pmaxy - pminy) * 0.18
-        try:
-            letters, credit_lines, cap = text3d.underside_text(
-                credit_text,
-                centre_xy=((pminx + pmaxx) / 2.0, cy),
-                box_w=box_w,
-                box_h=box_h,
-                depth=cfg.credit_depth,
-                font_path=cfg.caption_font,
-                fallback=credit_short,
+
+    def loose_pieces(mesh, what: str):
+        """Split a finished plate into the separate solids it turned out to be."""
+        if cfg.trail_entry == "bottom" and not cfg.route_only:
+            # The through-slot may have divided the plate. Every surviving piece
+            # is wanted: a route that closes on itself leaves an island of land
+            # inside the loop, and that island is part of the finished thing.
+            got, crumbs = meshlib.split_components(mesh, min_volume=2.0)
+            if crumbs:
+                warnings.append(
+                    f"discarded {crumbs} tiny detached fragment(s) of {what}"
+                )
+            return got
+        return [meshlib.largest_component(mesh)]
+
+    if tile_polys:
+        # Cut the finished plate into its tessellating pieces. This happens after
+        # the channel and the caption, so every piece carries whatever part of
+        # those fell inside it and the seams pass straight through them.
+        tall = float(np.max(Z_mm)) + cfg.trail_proud + 20.0
+        map_meshes = []
+        smallest_cap, no_room = None, []
+        for i, tile in enumerate(tile_polys, 1):
+            log(f"  cutting piece {i} of {len(tile_polys)}")
+            knife = meshlib.boolean(
+                "union",
+                [
+                    meshlib.extrude(p, height=tall + 10.0, z0=-5.0)
+                    for p in tiling.prism_polygons(tile, region)
+                ],
             )
-            log(
-                f"  engraving the data credit underneath "
-                f"({len(credit_lines)} lines, {cap:.1f} mm tall)"
+            piece = meshlib.boolean("intersection", [map_mesh, knife])
+            fit = (
+                _credit_box(tile, credit_text, cfg.caption_font)
+                if cfg.credit else None
             )
-            map_mesh = meshlib.boolean("difference", [map_mesh, letters])
-            if cap < 2.4:
+            if cfg.credit and fit is None:
+                no_room.append(i)
+            for part in loose_pieces(piece, f"piece {i}"):
+                # Each piece is a separate printed object that can be handled and
+                # shared on its own, so each one carries the credit in full rather
+                # than a slice of one sentence spread across the whole assembly.
+                if fit is not None:
+                    w, h, cx, cy = fit
+                    part, lines, cap = _engrave_credit(
+                        part, cfg, credit_text, credit_short, w, h, (cx, cy),
+                        log, warnings, label=f"piece {i}", quiet=True,
+                    )
+                    credit_lines = credit_lines or lines
+                    if cap is not None:
+                        smallest_cap = min(smallest_cap or cap, cap)
+                map_meshes.append(part)
+        if credit_lines:
+            log(f"  engraved the data credit under every piece "
+                f"({len(credit_lines)} lines, {smallest_cap:.1f} mm tall)")
+        if smallest_cap is not None and smallest_cap < 2.4:
+            warnings.append(
+                f"the credit engraved under each piece is only {smallest_cap:.1f} mm "
+                f"tall, which a 0.4 mm nozzle may not cut legibly. Use a bigger "
+                f"--size, fewer --tiles, or --no-credit and credit the terrain "
+                f"data another way."
+            )
+        if no_room:
+            warnings.append(
+                f"{len(no_room)} piece(s) were too awkward a shape to hold the "
+                f"terrain credit, so it was left off those"
+            )
+        if len(map_meshes) > len(tile_polys):
+            log(f"  the slot divides the pieces further: "
+                f"{len(map_meshes)} objects to print")
+            warnings.append(
+                f"the route cuts some pieces apart as well, so the {len(tile_polys)} "
+                f"tessellating pieces arrive as {len(map_meshes)} objects. Print "
+                f"them all; the trail locks them back together."
+            )
+        map_mesh = map_meshes[0]
+    else:
+        if cfg.credit:
+            box_w = (pmaxx - pminx) * 0.86
+            if band > 0:
+                box_h = band * 0.72
+                cy = (pmaxy + band / 2.0) if strip_on_top else (pminy - band / 2.0)
+            else:
+                box_h = min((pmaxy - pminy) * 0.24, 16.0)
+                cy = pminy + (pmaxy - pminy) * 0.18
+            map_mesh, credit_lines, cap = _engrave_credit(
+                map_mesh, cfg, credit_text, credit_short, box_w, box_h,
+                ((pminx + pmaxx) / 2.0, cy), log, warnings,
+            )
+            if cap is not None and cap < 2.4:
                 warnings.append(
                     f"the underside credit is only {cap:.1f} mm tall, which a 0.4 mm "
                     f"nozzle may not cut legibly. The map is small; consider a bigger "
                     f"--size, or --no-credit and credit the terrain data another way."
                 )
-        except Exception as exc:  # noqa: BLE001 - never lose the model over a label
-            warnings.append(f"could not engrave the underside credit: {exc}")
 
-    if cfg.trail_entry == "bottom" and not cfg.route_only:
-        # The through-slot may have divided the map. Every surviving piece is
-        # wanted: a route that closes on itself leaves an island of land inside
-        # the loop, and that island is part of the finished thing.
-        map_meshes, crumbs = meshlib.split_components(map_mesh, min_volume=2.0)
-        if crumbs:
-            warnings.append(f"discarded {crumbs} tiny detached fragment(s) of the map")
+        map_meshes = loose_pieces(map_mesh, "the map")
         if len(map_meshes) > 1:
             log(f"  the slot divides the map into {len(map_meshes)} piece(s)")
             warnings.append(
@@ -733,9 +932,6 @@ def build(cfg) -> Build:
                 f"fitted; print them all."
             )
         map_mesh = map_meshes[0]
-    else:
-        map_mesh = meshlib.largest_component(map_mesh)
-        map_meshes = [map_mesh]
 
     # ------------------------------------------------------------------ stats
     length_m = 0.0 if map_only else gpx_io.track_length_m(track)
@@ -797,6 +993,16 @@ def build(cfg) -> Build:
         "caption_position": cfg.caption_position,
         "trail_entry": cfg.trail_entry,
         "n_map_parts": len(map_meshes),
+        "tiles_wanted": int(cfg.tiles or 0),
+        "tile_layout": cfg.tile_layout,
+        "n_tiles": len(tile_polys),
+        "tile_size_mm": (
+            (
+                max(t.bounds[2] - t.bounds[0] for t in tile_polys),
+                max(t.bounds[3] - t.bounds[1] for t in tile_polys),
+            )
+            if tile_polys else None
+        ),
         "dem_source": source,
         "attribution": dem.attribution_for(source),
         "engraved_credit": credit_lines if cfg.credit else [],
@@ -824,8 +1030,12 @@ def build(cfg) -> Build:
         ),
     }
 
-    if not map_mesh.is_watertight:
-        warnings.append("the map mesh is not watertight; check it before printing")
+    leaky = [i for i, m in enumerate(map_meshes, 1) if not m.is_watertight]
+    if leaky:
+        where = "the map mesh is" if len(map_meshes) == 1 else (
+            f"map piece(s) {', '.join(str(i) for i in leaky)} are"
+        )
+        warnings.append(f"{where} not watertight; check before printing")
     for st_ in section_stats:
         if not st_["watertight"]:
             warnings.append(
@@ -869,6 +1079,7 @@ def build(cfg) -> Build:
         path_mm=path,
         plinth_polys=plinth_polys,
         plate_poly=plate_poly,
+        tile_polys=tile_polys,
         band_mm=band,
         stats=stats,
         warnings=warnings,

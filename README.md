@@ -108,6 +108,8 @@ python -m gpx2print walk.gpx --dry-run --preview walk.png
 | `--no-north-arrow` | on | Drop the north arrow. |
 | `--route-only` | off | Drop the landscape: just the route on a flat base. |
 | `--shape` | rectangle | `rectangle`, `square`, `circle`, `triangle`, `pentagon`, `hexagon` or `octagon`. |
+| `--tiles N` | 1 | Cut the map into N tessellating pieces. `square`, `triangle` and `hexagon` only. |
+| `--tile-layout` | divide | `divide` keeps the map's shape and bends the count; `assemble` keeps the count and lets the tiles decide the shape. |
 | `--caption-position` | bottom | Which side the caption strip sits on: `bottom` or `top`. |
 | `--margin F` | 0.15 | How much terrain to show around the track, as a fraction of its extent. |
 | `--trail-entry` | top | `top` drops the route into a groove; `bottom` pushes it up through a slot cut right through. |
@@ -280,6 +282,76 @@ The caption strip attaches to the bottom by default, or the top with
 triangle's apex, a circle's edge — the strip reaches far enough into the plate to make a
 join at least 25 mm wide, rather than hanging off a sliver. It says so if it still cannot
 manage a sound join.
+
+### Cutting the map into tessellating pieces
+
+```bash
+python -m gpx2print walk.gpx --shape hexagon --tiles 7 --size 300
+python -m gpx2print --at 56.7969,-5.0037 --across 20 --shape square --tiles 16
+```
+
+A map bigger than the print bed has to come apart somewhere. `--tiles N` divides it into
+**smaller copies of the plate's own outline**, so the seams follow a pattern instead of
+looking like damage. Only the three shapes that tile the plane can do it: **square,
+triangle and hexagon**. Asking for it with any other shape is refused rather than
+approximated.
+
+`--size` still means the size of the whole map. The pieces share that out between them,
+so `--size 300 --tiles 9` gives nine pieces of about 100 mm, and the report and the
+preview both name the **largest piece** so you can check it against your bed.
+
+#### Which gives way: the shape, or the count
+
+You cannot have both. Six hexagons do not add up to a hexagon, and no amount of
+arranging will make them. `--tile-layout` decides which half of the request wins.
+
+**`divide`** (the default) keeps the outline and bends the count. The map is still a
+hexagon and gets cut into a honeycomb — but a hexagon only divides into 7, 13, 19, 31
+and up, and a square or triangle only k × k, so 1, 4, 9, 16, 25. The nearest is used,
+ties going to the larger, since the point of dividing a map is usually to fit a bed and
+too small still fits. It tells you what you got and why.
+
+Around the rim of a hexagon the honeycomb leaves part-hexagons, and any too small to be
+worth printing is folded into the neighbour it shares the most edge with. A honeycomb
+pitch that would leave a piece with no neighbour to join — which happens when a cell
+lands centred on a corner of the plate — is rejected in favour of the next one, so no
+unprintable speck ever ends up in the set.
+
+**`assemble`** keeps the count and lets the outline follow. Ask for six hexagons and you
+get six whole hexagons, all identical, arranged into a cluster that covers the map;
+`--shape` then names the *tile* rather than the plate. Nothing is cut, so nothing is a
+part-piece, and any count from 2 upwards works exactly.
+
+```bash
+python -m gpx2print walk.gpx --shape hexagon --tiles 6 --tile-layout assemble
+```
+
+What it costs is that the tiles have to cover the whole walk between them, and a whole
+number of them rarely lands neatly on the shape of a walk. The layout is searched over
+tile size, over where the pattern sits, and — for hexagons — over which way round they
+lie, scored on the footprint they add up to, so it takes the tightest wrap it can find.
+Even so, some counts wrap loosely: two hexagons covering a wide walk have to be big, and
+the route ends up small in a lot of surrounding country. It says so when that happens,
+with the percentage, so you can try a different number.
+
+What else changes:
+
+- **The route is not divided.** A trail insert that crosses several pieces holds them
+  together once fitted, which is useful rather than a problem. Check its size in the
+  report if the bed is what you are worried about.
+- **Every piece carries the terrain credit in full** on its underside, rather than each
+  getting a slice of one sentence. A piece is an object that can be handled and shared
+  on its own, so it needs the whole attribution. With many small pieces the lettering
+  gets small, and it warns when it drops below what a 0.4 mm nozzle will cut.
+- The files are `<name>_tile1.3mf` … `<name>_tileN.3mf`, numbered in reading order, plus
+  the trail as usual. The preview draws the seams dashed, with each piece numbered.
+- The caption strip goes to the pieces along that edge of the plate, each taking the
+  slab below its own stretch of it.
+- `--trail-entry bottom` still applies, and a looping route can cut a piece in two on
+  top of the tessellation. You get more objects than pieces, and it says so.
+
+The pieces butt together with no deliberate gap, and nothing holds them but the trail
+and whatever glue you choose.
 
 ### The plinth
 

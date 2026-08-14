@@ -109,6 +109,22 @@ def build_parser() -> argparse.ArgumentParser:
                         f"rectangle is grown to hold the whole route, then scaled "
                         f"so the longest edge is still --size "
                         f"(default: {d.shape})")
+    g.add_argument("--tiles", type=int, default=d.tiles, metavar="N",
+                   help="split the map into N tessellating pieces, each a smaller "
+                        "copy of the plate's own outline. Only for --shape square, "
+                        "triangle or hexagon. Squares and triangles divide k x k, "
+                        "so 1, 4, 9, 16 ... are the reachable counts and the "
+                        "nearest is used; hexagons can hit almost any number. The "
+                        "map stays the size you asked for and the pieces share it "
+                        f"out (default: {d.tiles}, meaning one whole map)")
+    g.add_argument("--tile-layout", choices=("divide", "assemble"),
+                   default=d.tile_layout,
+                   help="divide: cut the chosen --shape into pieces, so the map "
+                        "stays that shape and the count is the nearest one it can "
+                        "be cut into. assemble: lay down exactly --tiles whole "
+                        "tiles and let the outline be whatever they add up to, so "
+                        "six hexagons really are six hexagons and the map is a "
+                        f"cluster of them (default: {d.tile_layout})")
     g.add_argument("--caption-position", choices=("bottom","top"),
                    default=d.caption_position,
                    help=f"which side the caption strip sits on "
@@ -240,6 +256,8 @@ def args_to_config(a) -> Config:
         altitude_offset_m=a.altitude_offset,
         margin=a.margin,
         shape=a.shape,
+        tiles=a.tiles,
+        tile_layout=a.tile_layout,
         caption_position=a.caption_position,
         square=a.square,
         route_only=a.route_only,
@@ -349,16 +367,28 @@ def _report(b, cfg, secs):
     print(f"  {'elevation':<20}{s['elev_min_m']:.0f} to {s['elev_max_m']:.0f} m")
     print(f"  {'scale':<20}1:{s['scale_denominator']:,.0f}, "
           f"vertical x{s['z_exaggeration']:.2f}")
-    label = "one object" if (s.get("route_only") or s.get("map_only")) else "map part"
-    print(f"  {label:<20}"
-          f"{s['map_size_mm'][0]:.1f} x {s['map_size_mm'][1]:.1f} "
-          f"x {s['map_size_mm'][2]:.1f} mm, {s['map_health']['faces']:,} faces"
-          + (f", {s['map_health']['bodies']} connected piece(s)"
-             if s.get("route_only") else ""))
+    if s.get("n_tiles", 0) > 1:
+        tw, th = s["tile_size_mm"]
+        print(f"  {'tessellation':<20}{s['n_tiles']} {s['shape']}s, "
+              + ("outline follows the tiles"
+                 if s.get("tile_layout") == "assemble" else f"cut from a {s['shape']}")
+              + (f" (you asked for {s['tiles_wanted']})"
+                 if s["tiles_wanted"] != s["n_tiles"] else ""))
+        print(f"  {'largest piece':<20}{tw:.1f} x {th:.1f} mm on the bed — check "
+              f"it fits yours")
+        print(f"  {'objects to print':<20}{s['n_map_parts']}")
+    else:
+        label = ("one object" if (s.get("route_only") or s.get("map_only"))
+                 else "map part")
+        print(f"  {label:<20}"
+              f"{s['map_size_mm'][0]:.1f} x {s['map_size_mm'][1]:.1f} "
+              f"x {s['map_size_mm'][2]:.1f} mm, {s['map_health']['faces']:,} faces"
+              + (f", {s['map_health']['bodies']} connected piece(s)"
+                 if s.get("route_only") else ""))
 
-    if s.get("n_map_parts", 1) > 1:
-        print(f"  {'map pieces':<20}{s['n_map_parts']} — the route cuts the map "
-              f"apart; print them all")
+        if s.get("n_map_parts", 1) > 1:
+            print(f"  {'map pieces':<20}{s['n_map_parts']} — the route cuts the map "
+                  f"apart; print them all")
     pieces = [] if s.get("route_only") else (s.get("sections") or [])
     if len(pieces) > 1:
         print(f"  {'trail parts':<20}{len(pieces)} separate pieces "

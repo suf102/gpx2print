@@ -251,6 +251,38 @@ class App(tk.Tk):
                   foreground=HINT, font=("", 10), wraplength=390,
                   justify="left").pack(anchor="w", pady=(0, 2))
 
+        line = ttk.Frame(g)
+        line.pack(fill="x", pady=(6, 0))
+        ttk.Label(line, text="Split into pieces").pack(side="left")
+        self.tiles_var = tk.IntVar(value=1)
+        ttk.Spinbox(line, from_=1, to=64, increment=1, width=7,
+                    textvariable=self.tiles_var, format="%.0f").pack(side="right")
+        ttk.Label(
+            g,
+            text="Leave at 1 for one whole map. Higher cuts it into that many "
+                 "smaller copies of the same shape, which fit back together like "
+                 "tiles — for a map too big for your printer. Squares, triangles "
+                 "and hexagons only.",
+            foreground=HINT, font=("", 10), wraplength=390, justify="left",
+        ).pack(anchor="w", pady=(0, 2))
+
+        self.layout_var = tk.StringVar(value="Keep the map's shape")
+        line = ttk.Frame(g)
+        line.pack(fill="x", pady=(6, 0))
+        ttk.Label(line, text="Pieces make").pack(side="left")
+        ttk.Combobox(
+            line, textvariable=self.layout_var, state="readonly", width=22,
+            values=["Keep the map's shape", "Exactly this many pieces"],
+        ).pack(side="right")
+        ttk.Label(
+            g,
+            text="Keeping the shape means the map is still a hexagon, but a "
+                 "hexagon only cuts into 7, 13 or 19 — so you get the nearest. "
+                 "Choose exactly instead and you get the number you asked for, "
+                 "with the map's outline being whatever those tiles add up to.",
+            foreground=HINT, font=("", 10), wraplength=390, justify="left",
+        ).pack(anchor="w", pady=(0, 2))
+
         self.cap_on = tk.BooleanVar(value=True)
         ttk.Checkbutton(g, text="Add a caption along the bottom",
                         variable=self.cap_on, command=self._toggle_caption).pack(
@@ -557,6 +589,18 @@ class App(tk.Tk):
             names = "\n".join(Path(p).name for p in missing)
             raise ValueError(f"These files have gone missing:\n{names}")
 
+        shape = self.shape_var.get().lower()
+        tiles = int(self.tiles_var.get() or 1)
+        if tiles > 1:
+            from .tiling import TILEABLE
+
+            if shape not in TILEABLE:
+                raise ValueError(
+                    f"A {shape} can't be split into tiles — the pieces would not "
+                    f"fit back together.\n\nChoose Square, Triangle or Hexagon as "
+                    f"the shape of the map, or set 'Split into pieces' back to 1."
+                )
+
         tol = float(self.fit_var.get().split("(")[1].split(" mm")[0])
         base = "flat" if self.style_var.get().startswith("Flat") else "follow"
         caption = self.cap_var.get().strip() if self.cap_on.get() else None
@@ -583,7 +627,10 @@ class App(tk.Tk):
             trail_entry=("bottom" if self.entry_var.get().startswith("From under")
                          else "top"),
             caption=caption or None,
-            shape=self.shape_var.get().lower(),
+            shape=shape,
+            tiles=tiles,
+            tile_layout=("assemble" if self.layout_var.get().startswith("Exactly")
+                         else "divide"),
             caption_position=("top" if "top" in self.cap_pos_var.get().lower()
                               else "bottom"),
             caption_style=(
@@ -679,11 +726,22 @@ class App(tk.Tk):
         s = b.stats
         self._say("")
         self._say(f"{s['length_km']:.1f} km, {s['ascent_m']:.0f} m of climbing")
-        self._say(
-            f"{'one object  ' if s.get('route_only') else 'map piece   '}"
-            f"{s['map_size_mm'][0]:.0f} x {s['map_size_mm'][1]:.0f} x "
-            f"{s['map_size_mm'][2]:.1f} mm"
-        )
+        if s.get("n_tiles", 0) > 1:
+            tw, th = s["tile_size_mm"]
+            self._say(
+                f"{s['n_tiles']} tessellating {s['shape']}s, "
+                f"{s['n_map_parts']} objects to print"
+            )
+            self._say(
+                f"largest piece {tw:.0f} x {th:.0f} x {s['map_size_mm'][2]:.1f} mm "
+                f"— check it fits your printer"
+            )
+        else:
+            self._say(
+                f"{'one object  ' if s.get('route_only') else 'map piece   '}"
+                f"{s['map_size_mm'][0]:.0f} x {s['map_size_mm'][1]:.0f} x "
+                f"{s['map_size_mm'][2]:.1f} mm"
+            )
 
         secs = [] if s.get("route_only") else (s.get("sections") or [])
         if len(secs) > 1:

@@ -31,12 +31,35 @@ def _hex_rgba(color: str) -> str:
     return "#" + c.upper()
 
 
+def _settle(mesh, decimals: int):
+    """The mesh as it will actually exist once written at this precision.
+
+    Rounding is not a formatting detail: it can land two vertices on the same
+    point, and any triangle that had both of them becomes a line with no area.
+    Left in the file those show up as holes in a mesh that was watertight in
+    memory. Doing the rounding here, then merging what it made identical and
+    dropping the triangles that collapsed, means the file holds a solid — and
+    that re-reading it checks the same geometry the writer decided on.
+    """
+    v = np.round(np.asarray(mesh.vertices, dtype=float), decimals)
+    # Negative zero prints differently and compares as a different set of bytes,
+    # so two vertices on the same point would survive as two.
+    v[v == 0] = 0.0
+    f = np.asarray(mesh.faces, dtype=np.int64)
+
+    v, inverse = np.unique(v, axis=0, return_inverse=True)
+    f = inverse.reshape(-1)[f]
+    f = f[(f[:, 0] != f[:, 1]) & (f[:, 1] != f[:, 2]) & (f[:, 2] != f[:, 0])]
+
+    used, f = np.unique(f, return_inverse=True)
+    return v[used], f.reshape(-1, 3)
+
+
 def _mesh_xml(mesh, decimals: int = 6) -> str:
     # 4 decimals looks like ample precision for millimetres, but boolean output
     # routinely puts vertices closer together than 0.1 micron. Rounding welds those
     # into degenerate triangles and punches holes in an otherwise watertight mesh.
-    v = np.asarray(mesh.vertices, dtype=float)
-    f = np.asarray(mesh.faces, dtype=np.int64)
+    v, f = _settle(mesh, decimals)
 
     vfmt = f'<vertex x="%.{decimals}f" y="%.{decimals}f" z="%.{decimals}f"/>'
     verts = "".join([vfmt % (a, b, c) for a, b, c in v])

@@ -144,6 +144,16 @@ def text_block(lines: list[str], font_path: str | None = None, line_gap: float =
     return merged
 
 
+_WRAP_CACHE: dict = {}
+"""Layouts already worked out, keyed by text and box.
+
+A map split into tessellating pieces engraves the same credit into every piece,
+and the pieces are usually congruent, so the same wrap is otherwise computed a
+couple of dozen times over — each one building glyph outlines for five candidate
+line counts.
+"""
+
+
 def best_wrap(text: str, box_w: float, box_h: float, font_path=None, max_lines=5):
     """Choose the number of lines that makes the lettering as large as possible.
 
@@ -151,6 +161,10 @@ def best_wrap(text: str, box_w: float, box_h: float, font_path=None, max_lines=5
     nozzle can lay. Splitting it lets the letters grow instead.
     """
     import textwrap
+
+    key = (text, round(box_w, 3), round(box_h, 3), font_path, max_lines)
+    if key in _WRAP_CACHE:
+        return _WRAP_CACHE[key]
 
     best = None
     for n in range(1, max_lines + 1):
@@ -163,6 +177,8 @@ def best_wrap(text: str, box_w: float, box_h: float, font_path=None, max_lines=5
         cap = scale * 100.0
         if best is None or cap > best[2]:
             best = (fitted, lines, cap)
+    # Shapely geometry is never mutated in place here, so sharing it is safe.
+    _WRAP_CACHE[key] = best
     return best
 
 

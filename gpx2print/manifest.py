@@ -61,6 +61,8 @@ def command_line(cfg, out_path: str, combined=False, stl=False,
         argv += ["--scale", f"{cfg.scale_denominator:g}"]
     if cfg.altitude_offset_m:
         argv += ["--altitude-offset", f"{cfg.altitude_offset_m:g}"]
+    if cfg.tiles and cfg.tiles > 1:
+        argv += ["--tiles", f"{int(cfg.tiles):d}", "--tile-layout", cfg.tile_layout]
     argv += [
         "--shape", cfg.shape,
         "--caption-position", cfg.caption_position,
@@ -196,6 +198,11 @@ def render(b, cfg, written: list[str], out_path: str, combined=False, stl=False,
          f"the coordinate {cfg.centre}, {cfg.across_km:g} km across"
          if cfg.centre and not cfg.gpx_paths else "a GPX route"),
         ("Plate shape", cfg.shape),
+        ("Split into pieces",
+         f"{s.get('n_tiles')} tessellating {cfg.shape}s, "
+         + ("outline follows the tiles" if cfg.tile_layout == "assemble"
+            else f"cut from one {cfg.shape}")
+         if s.get("n_tiles", 0) > 1 else "no, printed whole"),
         ("Caption strip", f"along the {cfg.caption_position}"),
         ("Route fitted", f"from the {cfg.trail_entry}"),
         ("Altitude measured from",
@@ -243,6 +250,10 @@ def render(b, cfg, written: list[str], out_path: str, combined=False, stl=False,
     if s.get("scale_bar"):
         add(f"  Scale bar shows  {s['scale_bar'][0]:g} m as "
             f"{s['scale_bar'][1]:.1f} mm")
+    if s.get("n_tiles", 0) > 1:
+        tw, th = s["tile_size_mm"]
+        add(f"  Tessellation     {s['n_tiles']} {s['shape']}s, largest "
+            f"{tw:.1f} x {th:.1f} mm, {s['n_map_parts']} object(s) to print")
     add(f"  Sections found   {s.get('n_raw_sections', 1)} "
         f"-> {s.get('n_sections', 1)} printable piece(s)")
     add("")
