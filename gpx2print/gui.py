@@ -530,6 +530,22 @@ class App(tk.Tk):
 
         ttk.Separator(g).pack(fill="x", pady=(10, 6))
 
+        self.sea_var = tk.BooleanVar(value=False)
+        sea_box = ttk.Checkbutton(
+            g, text="Flatten the sea \u2014 everything below 0 m",
+            variable=self.sea_var,
+        )
+        sea_box.pack(anchor="w")
+        sea_hint = ttk.Label(
+            g, text="The height data includes the sea floor, so a coastal map "
+                    "otherwise comes out with a trench beside it and the land "
+                    "squashed flat to fit both in. This levels the water instead. "
+                    "Leave it off inland, and anywhere the low ground is real dry "
+                    "land below sea level.",
+            foreground=HINT, font=("", 10), wraplength=390, justify="left")
+        sea_hint.pack(anchor="w", pady=(0, 6))
+        self.f_sea = Field(sea_box, sea_hint)
+
         self.route_only_var = tk.BooleanVar(value=False)
         self.route_only_var.trace_add("write", lambda *_: self._refresh())
         ro_box = ttk.Checkbutton(g, text="Route only \u2014 no surrounding landscape",
@@ -804,6 +820,7 @@ class App(tk.Tk):
             scale_bar=bool(self.scale_var.get()),
             north_arrow=bool(self.north_var.get()),
             route_only=bool(self.route_only_var.get()),
+            flatten_sea=bool(self.sea_var.get()),
             verbose=False,
             log_fn=lambda m: self.queue.put(("log", m)),
         )

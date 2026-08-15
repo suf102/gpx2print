@@ -92,6 +92,8 @@ def command_line(cfg, out_path: str, combined=False, stl=False,
         argv += ["--square"]
     if cfg.route_only:
         argv += ["--route-only"]
+    if cfg.flatten_sea:
+        argv += ["--flatten-sea"]
     if cfg.dem_zoom is not None:
         argv += ["--dem-zoom", str(cfg.dem_zoom)]
     if cfg.cache_dir:
@@ -216,6 +218,9 @@ def render(b, cfg, written: list[str], out_path: str, combined=False, stl=False,
         ("Land around the route", f"{cfg.margin:g} of the track's extent"),
         ("Square footprint", "yes" if cfg.square else "no"),
         ("Route only, no landscape", "yes" if cfg.route_only else "no"),
+        ("Sea levelled flat",
+         f"yes, {s.get('sea_share', 0) * 100:.0f}% of the map is below sea level"
+         if cfg.flatten_sea else "no"),
         ("Vertical",
          f"relief forced to {cfg.max_relief_mm:g} mm"
          if cfg.max_relief_mm is not None else f"exaggeration x{cfg.z_scale:g}"),

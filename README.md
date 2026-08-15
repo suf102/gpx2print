@@ -106,6 +106,7 @@ python -m gpx2print walk.gpx --dry-run --preview walk.png
 | `--caption-style` | deboss | `deboss` cuts the lettering in, `emboss` raises it. Also affects the scale bar and north arrow. |
 | `--no-scale-bar` | on | Drop the chequered distance scale. |
 | `--no-north-arrow` | on | Drop the north arrow. |
+| `--flatten-sea` | off | Level everything below sea level, so water reads as a flat surface instead of a trench. |
 | `--route-only` | off | Drop the landscape: just the route on a flat base. |
 | `--shape` | rectangle | `rectangle`, `square`, `circle`, `triangle`, `pentagon`, `hexagon` or `octagon`. |
 | `--tiles N` | 1 | Cut the map into N tessellating pieces. `square`, `triangle` and `hexagon` only. |
@@ -134,6 +135,31 @@ independent — loosening the fit never makes the trail look thinner.
 
 Below about 1.2 mm the insert gets fragile and the tool says so. Wide lines are safe;
 they just swallow more detail on tight switchbacks.
+
+### Coastal maps: the sea has a floor
+
+The elevation data covers the sea bed as well as the land, so a map of anywhere
+coastal is printed with a trench beside it. That is not just ugly — the relief is
+scaled to fit the whole range into one model, so a 200 m deep sound next to a 900 m
+hill costs you a fifth of the height the hills could have had.
+
+```bash
+python -m gpx2print --at 57.30,-6.35 --across 26 --flatten-sea --caption "Skye"
+```
+
+`--flatten-sea` levels everything below 0 m, so the water comes out as a surface
+rather than a hole. On that Skye example it takes the range from −203..856 m down to
+0..856 m: the water goes from 2 mm of lumpy sea bed to dead flat, and the land keeps
+the height it had.
+
+The levelling happens **twice** — once before the terrain smoothing and once after.
+Before, so a deep trench offshore cannot drag the coastline down with it when the
+data is blurred; after, so the smoothing does not leave the water sloping gently into
+the beach.
+
+It is off by default because inland it does nothing, and where low ground is real dry
+land below sea level — the Netherlands, the Dead Sea, Death Valley — it would flatten
+terrain that is genuinely there.
 
 ### Several files at once
 

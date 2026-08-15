@@ -7,6 +7,7 @@ import numpy as np
 INK = "#1d2129"
 PAPER = "#faf8f4"
 GRID = "#c9c3b8"
+WATER = (0.42, 0.56, 0.65)
 
 
 def _hillshade(Z, dx, dy, azimuth=315.0, altitude=45.0, exaggeration=2.0):
@@ -155,6 +156,11 @@ def render(build, cfg, path: str, dpi: int = 170) -> str:
     cmap = _terrain_colors(Z_m)
     norm = plt.Normalize(np.min(Z_m), max(np.max(Z_m), np.min(Z_m) + 1e-6))
     rgb = cmap(norm(Z_m))[:, :, :3]
+
+    # Levelled sea is drawn as water rather than as the lowest shade of land,
+    # which is what it would otherwise be: flat, green, and unreadable as sea.
+    if st.get("flatten_sea") and st.get("sea_share", 0) > 0:
+        rgb[Z_m <= 0.0] = WATER
 
     # The plate may not be a rectangle; everything terrain-ish is clipped to it.
     plate = getattr(b, "plate_poly", None)

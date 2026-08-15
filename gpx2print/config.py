@@ -90,6 +90,16 @@ class Config:
     is a cluster of them rather than one big hexagon.
     """
 
+    flatten_sea: bool = False
+    """Level everything below sea level, so the water reads as a flat surface.
+
+    The elevation data includes the sea floor, so without this a coastal map is
+    printed with a trench beside it and the land squashed to fit the two into one
+    relief. Off by default, because it is only right where the low ground really
+    is sea: somewhere genuinely below sea level and dry, like the Dead Sea or the
+    Netherlands, it would flatten real land.
+    """
+
     separate_strip: bool = False
     """Print the caption strip as its own part rather than joined to the map.
 

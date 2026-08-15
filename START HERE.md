@@ -197,6 +197,12 @@ in there are worth knowing about:
   map comes out as big as it needs to be. Leave it at 0 to use the size instead.
 - *Altitude offset* — changes the height the hills are measured from. Handy if you are
   printing two neighbouring walks and want them to stand at matching heights.
+- *Flatten the sea* — the height data includes the **sea floor**, so a map of
+  anywhere coastal otherwise comes out with a trench beside the land, and the hills
+  squashed flat to fit both into one model. Tick this and everything below 0 m is
+  levelled, so the water reads as a surface. Off by default, because inland it does
+  nothing, and somewhere genuinely below sea level and dry — the Netherlands, the
+  Dead Sea — it would flatten real land.
 - *Route only* — leaves out the landscape entirely. You get the route standing on a
   plain base as an elevation profile: the hills around it are gone, but the route still
   rises and falls with the real ground. The base keeps the caption, scale and arrow.

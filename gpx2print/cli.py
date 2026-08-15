@@ -98,6 +98,11 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--margin", type=float, default=d.margin,
                    help=f"terrain padding around the track, as a fraction of its "
                         f"extent (default: {d.margin:g})")
+    g.add_argument("--flatten-sea", action="store_true",
+                   help="level everything below sea level so the water comes out "
+                        "as a flat surface. The elevation data carries the sea "
+                        "floor, so without this a coastal map gets a trench "
+                        "beside it and the land is squashed to fit both in")
     g.add_argument("--route-only", action="store_true",
                    help="leave out the surrounding landscape: the route stands on "
                         "a flat base carrying the caption, scale bar and north "
@@ -266,6 +271,7 @@ def args_to_config(a) -> Config:
         caption_position=a.caption_position,
         square=a.square,
         route_only=a.route_only,
+        flatten_sea=a.flatten_sea,
         z_scale=a.z_scale,
         max_relief_mm=a.max_relief,
         base_mm=a.base,
@@ -370,7 +376,9 @@ def _report(b, cfg, secs):
     if not s.get("map_only"):
         print(f"  {'length':<20}{s['length_km']:.2f} km, "
               f"{s['ascent_m']:.0f} m ascent")
-    print(f"  {'elevation':<20}{s['elev_min_m']:.0f} to {s['elev_max_m']:.0f} m")
+    print(f"  {'elevation':<20}{s['elev_min_m']:.0f} to {s['elev_max_m']:.0f} m"
+          + (f", sea levelled flat ({s['sea_share'] * 100:.0f}% of the map)"
+             if s.get("flatten_sea") and s.get("sea_share") else ""))
     print(f"  {'scale':<20}1:{s['scale_denominator']:,.0f}, "
           f"vertical x{s['z_exaggeration']:.2f}")
     if s.get("n_tiles", 0) > 1:

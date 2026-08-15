@@ -14,6 +14,9 @@ from . import chain, dem, gpx_io, legend, meshlib, shapes, text3d, tiling
 MIN_FLOOR_MM = 1.2
 """Material left under the deepest point of the channel."""
 
+SEA_LEVEL_M = 0.0
+"""Where the sea is, for --flatten-sea. Zero, by definition of sea level."""
+
 
 @dataclass
 class Build:
@@ -458,10 +461,28 @@ def build(cfg) -> Build:
     Z_m, source = dem.elevation_grid(cfg, frame, track, lat_grid, lon_grid, log)
     Z_m = np.asarray(Z_m, dtype=float)
 
+    # The elevation data carries the sea floor as well as the land, so a coastal
+    # map comes out with a trench beside it and the whole relief squashed to fit.
+    # Flattening the water gives the sea a surface instead of a bottom.
+    sea_share = float(np.mean(Z_m < SEA_LEVEL_M)) if cfg.flatten_sea else 0.0
+    if cfg.flatten_sea:
+        # Levelled before the smoothing as well as after: before, so a deep
+        # trench offshore cannot drag the coast down with it; after, so the
+        # smoothing does not leave the water sloping into the beach.
+        Z_m = np.maximum(Z_m, SEA_LEVEL_M)
+
     if cfg.smooth > 0:
         from scipy.ndimage import gaussian_filter
 
         Z_m = gaussian_filter(Z_m, sigma=cfg.smooth, mode="nearest")
+
+    if cfg.flatten_sea:
+        Z_m = np.maximum(Z_m, SEA_LEVEL_M)
+        if sea_share > 0:
+            log(f"  sea levelled flat at {SEA_LEVEL_M:.0f} m, "
+                f"{sea_share * 100:.0f}% of the map")
+        else:
+            log("  nothing here is below sea level, so levelling it changed nothing")
 
     z_min_m = float(np.min(Z_m))
     z_max_m = float(np.max(Z_m))
@@ -1123,6 +1144,8 @@ def build(cfg) -> Build:
         "n_map_parts": len(map_meshes),
         "tiles_wanted": int(cfg.tiles or 0),
         "tile_layout": cfg.tile_layout,
+        "flatten_sea": bool(cfg.flatten_sea),
+        "sea_share": sea_share,
         "separate_strip": strip_mesh is not None,
         "strip_size_mm": (
             (
